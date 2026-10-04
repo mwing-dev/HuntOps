@@ -44,7 +44,7 @@ public sealed class MigrationTests(PostgresFixture postgres)
     [Fact]
     public async Task Migrator_fails_clearly_when_database_is_unreachable()
     {
-        await using var services = TestServices.Build("Host=127.0.0.1;Port=1;Database=none;Username=x;Password=x;Timeout=1");
+        await using var services = TestServices.Build(TestSecrets.UnreachableDatabase(out _));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             DatabaseMigrator.MigrateAsync(services, NullLogger.Instance, TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken));

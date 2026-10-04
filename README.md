@@ -130,7 +130,7 @@ Manually against a local database:
 dotnet run --project src/HuntOps.Worker -- migrate
 ```
 
-Or with the EF tool, which uses `HUNTOPS_DESIGN_CONNECTION` if set and otherwise `Host=localhost;Port=5432;Database=huntops;Username=huntops;Password=huntops`:
+Or with the EF tool, which reads the full connection string from `HUNTOPS_DESIGN_CONNECTION` (there is no built-in default credential):
 
 ```bash
 dotnet ef database update --project src/HuntOps.Infrastructure --startup-project src/HuntOps.Infrastructure
