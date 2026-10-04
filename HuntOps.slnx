@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/HuntOps.Api/HuntOps.Api.csproj" />
+    <Project Path="src/HuntOps.Application/HuntOps.Application.csproj" />
+    <Project Path="src/HuntOps.Domain/HuntOps.Domain.csproj" />
+    <Project Path="src/HuntOps.Infrastructure/HuntOps.Infrastructure.csproj" />
+    <Project Path="src/HuntOps.Mcp/HuntOps.Mcp.csproj" />
+    <Project Path="src/HuntOps.Web/HuntOps.Web.csproj" />
+    <Project Path="src/HuntOps.Worker/HuntOps.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/HuntOps.IntegrationTests/HuntOps.IntegrationTests.csproj" />
+    <Project Path="tests/HuntOps.UnitTests/HuntOps.UnitTests.csproj" />
+  </Folder>
+</Solution>
