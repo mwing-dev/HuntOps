@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\HuntOps.Domain\HuntOps.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Pragmatic choice (architecture §3): Application talks to EF Core through IHuntOpsDb. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+</Project>

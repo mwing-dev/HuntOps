@@ -14,6 +14,7 @@ HuntOps is a generic, self-hosted platform for tracking hunting draw application
 | 1 | 2026-10-04 | Initial design review. |
 | 2 | 2026-10-04 | Owner decisions recorded (§13). Scraping redesigned as **exact URL → safe fetch → content-type text extraction → normalized text → hash → Gemini structured extraction → ProposedChange → human review**. Generic heuristic parsers dropped. PDF text extraction moved into V1. MCP `propose_events` dropped. Phase 7 split into 7 (sources + text) and 8 (AI extraction); later phases renumbered. ntfy image corrected to `binwiederhier/ntfy`. |
 | 2.1 | 2026-10-04 | **Approved.** Evidence verification uses tolerant normalization and records evidence coordinates (§5.6). Snapshot and evidence retention is explicit and configurable (§5.9). The AI budget is fair across sources: a deferred-analysis queue, a per-source daily cap, and least-served-first dispatch (§5.4). |
+| 2.1.1 | 2026-10-04 | Phase 1 implementation notes:<br>• the dev overlay is `docker-compose.dev.yml`, opted into with `-f`, so production never picks it up automatically<br>• published ports bind to `HUNTOPS_BIND_ADDRESS` (default `127.0.0.1`)<br>• volumes have explicit names<br>• the worker exposes `/health` on internal port 8081<br>• containers self-probe with `--healthcheck`<br>• tests run on Microsoft.Testing.Platform<br>• ntfy env-var configuration and declarative auth (`NTFY_AUTH_USERS` / `NTFY_AUTH_ACCESS` / `NTFY_AUTH_TOKENS`) are confirmed against the official docs, so no CLI bootstrap script is needed |
 
 ---
 
@@ -93,10 +94,10 @@ HuntOps/
 ├─ Directory.Packages.props       # central package versions
 ├─ global.json                    # pin SDK 10.0.x
 ├─ docker-compose.yml
-├─ docker-compose.override.yml    # dev: exposed ports, dev settings (committed; contains no secrets)
+├─ docker-compose.dev.yml         # opt-in dev overlay (-f): publishes postgres, Development env, text logs
 ├─ .env.example
 ├─ deploy/
-│  ├─ ntfy/                       # ntfy bootstrap script (users/tokens/ACL)
+│  ├─ ntfy/                       # ntfy notes; users/tokens are declarative (NTFY_AUTH_USERS/TOKENS, confirmed Phase 1)
 │  └─ backup/                     # pg_dump / restore scripts
 ├─ samples/
 │  ├─ import/kansas-antelope.csv  # first test case lives HERE, never in src/
@@ -829,11 +830,11 @@ Example notification:
 
 | Service | Image | Purpose | Volume |
 |---|---|---|---|
-| `huntops-postgres` | `postgres:17` | Database, healthcheck `pg_isready` | `huntops-pgdata` |
+| `huntops-postgres` | `postgres:17-alpine` | Database, healthcheck `pg_isready` | `huntops-pgdata` (explicit volume name) |
 | `huntops-migrate` | HuntOps worker image, `migrate` | One-shot, idempotent migrations, never destructive | – |
 | `huntops-web` | `HuntOps.Web` | Dashboard, `/api`, `/mcp`, `/health`. Port 8080. | – |
 | `huntops-worker` | `HuntOps.Worker` | Schedulers, source pipeline, AI calls, jobs, heartbeat | – |
-| `huntops-ntfy` | `binwiederhier/ntfy` | Push. Port 80 inside, 8081 published in dev. | `huntops-ntfy-data` |
+| `huntops-ntfy` | `binwiederhier/ntfy:v2.28.0` (`NTFY_IMAGE_TAG`) | Push. Port 80 inside, published on `127.0.0.1:8081`. | `huntops-ntfy-data` (explicit volume name) |
 
 - `web` and `worker` depend on `huntops-migrate` completing successfully.
 - The reverse proxy stays outside the stack. The README covers the WebSocket requirement for Blazor Server and `X-Forwarded-*` headers.

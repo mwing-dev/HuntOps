@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Web SDK so the worker can expose /health and /health/ready for its container healthcheck. -->
+
+  <ItemGroup>
+    <ProjectReference Include="..\HuntOps.Infrastructure\HuntOps.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

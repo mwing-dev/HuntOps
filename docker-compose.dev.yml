@@ -1,0 +1,24 @@
+# Development overlay. Use explicitly:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+# Publishes PostgreSQL on localhost so `dotnet run`, `dotnet ef` and IDE tooling can reach it,
+# and switches the .NET services to Development with human-readable logs.
+
+services:
+  huntops-postgres:
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+
+  huntops-migrate:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      LOG_FORMAT: text
+
+  huntops-web:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      LOG_FORMAT: text
+
+  huntops-worker:
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      LOG_FORMAT: text

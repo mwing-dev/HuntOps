@@ -1,0 +1,112 @@
+# HuntOps stack. Copy .env.example to .env, set the required values, then:
+#   docker compose up -d --build
+# Published ports bind to HUNTOPS_BIND_ADDRESS (default 127.0.0.1) so the stack is only reachable
+# through your reverse proxy unless you choose otherwise.
+
+name: huntops
+
+x-dotnet-env: &dotnet-env
+  POSTGRES_HOST: huntops-postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-huntops}
+  POSTGRES_USER: ${POSTGRES_USER:-huntops}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+  ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+  LOG_LEVEL: ${LOG_LEVEL:-Information}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+  HUNTOPS_PUBLIC_URL: ${HUNTOPS_PUBLIC_URL:-}
+
+services:
+  huntops-postgres:
+    image: postgres:17-alpine
+    container_name: huntops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-huntops}
+      POSTGRES_USER: ${POSTGRES_USER:-huntops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+    volumes:
+      - huntops-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # One-shot: applies EF Core migrations (non-destructive, idempotent) and exits.
+  huntops-migrate:
+    image: huntops-worker:local
+    build:
+      context: .
+      target: worker
+    container_name: huntops-migrate
+    command: ["migrate"]
+    restart: "no"
+    environment:
+      <<: *dotnet-env
+    depends_on:
+      huntops-postgres:
+        condition: service_healthy
+
+  huntops-web:
+    image: huntops-web:local
+    build:
+      context: .
+      target: web
+    container_name: huntops-web
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-env
+    ports:
+      - "${HUNTOPS_BIND_ADDRESS:-127.0.0.1}:${HUNTOPS_WEB_PORT:-8080}:8080"
+    depends_on:
+      huntops-migrate:
+        condition: service_completed_successfully
+
+  huntops-worker:
+    image: huntops-worker:local
+    build:
+      context: .
+      target: worker
+    container_name: huntops-worker
+    restart: unless-stopped
+    environment:
+      <<: *dotnet-env
+      HUNTOPS_WORKER_ID: ${HUNTOPS_WORKER_ID:-worker}
+    depends_on:
+      huntops-migrate:
+        condition: service_completed_successfully
+
+  huntops-ntfy:
+    image: binwiederhier/ntfy:${NTFY_IMAGE_TAG:-v2.28.0}
+    container_name: huntops-ntfy
+    command: ["serve"]
+    restart: unless-stopped
+    environment:
+      # The ntfy server's own base-url is the PUBLIC URL your phone uses (architecture §9.1).
+      NTFY_BASE_URL: ${NTFY_PUBLIC_URL:-http://localhost:8081}
+      NTFY_UPSTREAM_BASE_URL: ${NTFY_UPSTREAM_BASE_URL:-https://ntfy.sh}
+      NTFY_BEHIND_PROXY: ${NTFY_BEHIND_PROXY:-true}
+      NTFY_CACHE_FILE: /var/lib/ntfy/cache.db
+      NTFY_AUTH_FILE: /var/lib/ntfy/auth.db
+      NTFY_AUTH_DEFAULT_ACCESS: ${NTFY_AUTH_DEFAULT_ACCESS:-deny-all}
+      NTFY_ATTACHMENT_CACHE_DIR: /var/lib/ntfy/attachments
+      TZ: ${TZ:-UTC}
+    volumes:
+      - huntops-ntfy-data:/var/lib/ntfy
+    ports:
+      - "${HUNTOPS_BIND_ADDRESS:-127.0.0.1}:${NTFY_HOST_PORT:-8081}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 http://localhost:80/v1/health -O - | grep -Eo '\"healthy\"\\s*:\\s*true' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+# Explicit names (no project prefix) so backup/restore commands are predictable.
+volumes:
+  huntops-pgdata:
+    name: huntops-pgdata
+  huntops-ntfy-data:
+    name: huntops-ntfy-data

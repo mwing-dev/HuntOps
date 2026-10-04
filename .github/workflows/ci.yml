@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore HuntOps.slnx
+
+      - name: Build (warnings as errors)
+        run: dotnet build HuntOps.slnx -c Release --no-restore
+
+      - name: Test (unit + integration; Testcontainers uses the runner's Docker)
+        run: dotnet test --solution HuntOps.slnx -c Release --no-build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate compose file
+        run: POSTGRES_PASSWORD=ci docker compose config --quiet
+
+      - name: Build images
+        run: |
+          docker build --target web -t huntops-web:ci .
+          docker build --target worker -t huntops-worker:ci .
+
+      - name: Smoke test stack
+        run: |
+          cp .env.example .env
+          sed -i "s|^POSTGRES_PASSWORD=$|POSTGRES_PASSWORD=$(openssl rand -hex 24)|" .env
+          docker compose up -d --build --wait --wait-timeout 180
+          curl -fsS http://127.0.0.1:8080/health/ready
+          curl -fsS http://127.0.0.1:8081/v1/health
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
