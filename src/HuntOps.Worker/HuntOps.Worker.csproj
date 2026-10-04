@@ -6,4 +6,8 @@
     <ProjectReference Include="..\HuntOps.Infrastructure\HuntOps.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="HuntOps.IntegrationTests" />
+  </ItemGroup>
+
 </Project>

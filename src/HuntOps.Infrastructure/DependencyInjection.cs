@@ -14,11 +14,14 @@ public static class DependencyInjection
     public static IServiceCollection AddHuntOpsInfrastructure(this IServiceCollection services)
     {
         // The connection string is resolved lazily so hosts and tests can supply configuration after registration.
+        services.AddScoped<AuditingInterceptor>();
         services.AddDbContext<HuntOpsDbContext>((provider, options) =>
             HuntOpsDbContextOptions.Configure(
-                options,
-                DatabaseConnectionString.Resolve(provider.GetRequiredService<IConfiguration>())));
+                    options,
+                    DatabaseConnectionString.Resolve(provider.GetRequiredService<IConfiguration>()))
+                .AddInterceptors(provider.GetRequiredService<AuditingInterceptor>()));
         services.AddScoped<IHuntOpsDb>(provider => provider.GetRequiredService<HuntOpsDbContext>());
+        services.AddSingleton<IDatabaseErrorClassifier, PostgresErrorClassifier>();
         services.AddHuntOpsApplication();
         return services;
     }

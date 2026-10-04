@@ -15,6 +15,7 @@ x-dotnet-env: &dotnet-env
   LOG_LEVEL: ${LOG_LEVEL:-Information}
   LOG_FORMAT: ${LOG_FORMAT:-json}
   HUNTOPS_PUBLIC_URL: ${HUNTOPS_PUBLIC_URL:-}
+  HUNTOPS_SWAGGER_ENABLED: ${HUNTOPS_SWAGGER_ENABLED:-true}
 
 services:
   huntops-postgres:
