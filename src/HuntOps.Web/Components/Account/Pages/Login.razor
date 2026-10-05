@@ -1,0 +1,124 @@
+@page "/account/login"
+@attribute [AllowAnonymous]
+@attribute [ExcludeFromInteractiveRouting]
+@layout AccountLayout
+@using System.ComponentModel.DataAnnotations
+@using HuntOps.Infrastructure.Identity
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@inject SignInManager<AppUser> SignInManager
+@inject UserManager<AppUser> UserManager
+@inject NavigationManager Navigation
+@inject ILogger<Login> Logger
+
+<PageTitle>Sign in · HuntOps</PageTitle>
+
+<h1 class="account-title">Sign in</h1>
+
+@if (!ownerExists)
+{
+    <div class="account-alert account-alert-warning" role="alert">
+        No owner account is configured yet. Set <code>HUNTOPS_ADMIN_EMAIL</code> and <code>HUNTOPS_ADMIN_PASSWORD</code>
+        in <code>.env</code> and restart the stack (<code>docker compose up -d</code>). HuntOps never creates default credentials.
+    </div>
+}
+
+@if (LoggedOut)
+{
+    <div class="account-alert account-alert-info" role="status">You have been signed out.</div>
+}
+
+@if (errorMessage is not null)
+{
+    <div class="account-alert account-alert-error" role="alert">@errorMessage</div>
+}
+
+<EditForm Model="Input!" FormName="login" OnValidSubmit="SignInAsync" method="post" class="account-form">
+    <DataAnnotationsValidator />
+    <label for="email">Email</label>
+    <InputText id="email" @bind-Value="Input!.Email" type="email" autocomplete="username" autofocus />
+    <ValidationMessage For="() => Input!.Email" />
+
+    <label for="password">Password</label>
+    <InputText id="password" @bind-Value="Input!.Password" type="password" autocomplete="current-password" />
+    <ValidationMessage For="() => Input!.Password" />
+
+    <label class="account-check">
+        <InputCheckbox @bind-Value="Input!.RememberMe" />
+        Keep me signed in on this device
+    </label>
+
+    <button type="submit" class="account-button" disabled="@(!ownerExists)">Sign in</button>
+</EditForm>
+
+@code {
+    private string? errorMessage;
+    private bool ownerExists = true;
+
+    [SupplyParameterFromForm]
+    private InputModel? Input { get; set; }
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery]
+    private bool LoggedOut { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        ownerExists = await UserManager.Users.AnyAsync(u => u.IsOwner);
+    }
+
+    private async Task SignInAsync()
+    {
+        // lockoutOnFailure: 5 failed attempts lock the account for 15 minutes (IdentityPolicy).
+        var password = Input!.Password;
+
+        // Never render the submitted password back into the page.
+        Input.Password = "";
+        var result = await SignInManager.PasswordSignInAsync(Input.Email.Trim(), password, Input.RememberMe, lockoutOnFailure: true);
+        if (result.Succeeded)
+        {
+            LogSignedIn(Logger);
+            Navigation.NavigateTo(SafeReturnUrl(ReturnUrl), forceLoad: true);
+            return;
+        }
+
+        if (result.IsLockedOut)
+        {
+            LogLockedOut(Logger);
+            errorMessage = $"Too many failed attempts. Sign-in is locked for {IdentityPolicy.LockoutDuration.TotalMinutes:0} minutes.";
+            return;
+        }
+
+        LogFailed(Logger);
+        errorMessage = "Invalid email or password.";
+    }
+
+    /// <summary>Only local paths are allowed, so the login page cannot be used as an open redirect.</summary>
+    internal static string SafeReturnUrl(string? returnUrl) =>
+        !string.IsNullOrEmpty(returnUrl) && returnUrl.StartsWith('/') && !returnUrl.StartsWith("//", StringComparison.Ordinal)
+            && !returnUrl.StartsWith("/\\", StringComparison.Ordinal) && !returnUrl.StartsWith("/account/", StringComparison.OrdinalIgnoreCase)
+            ? returnUrl
+            : "/";
+
+    private static void LogSignedIn(ILogger logger) => logger.LogInformation("Owner signed in");
+
+    private static void LogFailed(ILogger logger) => logger.LogWarning("Failed sign-in attempt");
+
+    private static void LogLockedOut(ILogger logger) => logger.LogWarning("Sign-in rejected: account locked out");
+
+    private sealed class InputModel
+    {
+        [Required(ErrorMessage = "Enter your email.")]
+        [EmailAddress(ErrorMessage = "Enter a valid email address.")]
+        public string Email { get; set; } = "";
+
+        [Required(ErrorMessage = "Enter your password.")]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        public bool RememberMe { get; set; }
+    }
+}

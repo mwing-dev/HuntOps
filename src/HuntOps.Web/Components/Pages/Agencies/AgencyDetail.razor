@@ -1,0 +1,115 @@
+@page "/agencies/{Id:guid}"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@(agency?.Name ?? "Agency") · HuntOps</PageTitle>
+
+@if (agency is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudBreadcrumbs Items="@([new BreadcrumbItem("Agencies", "/agencies"), new BreadcrumbItem(agency.Name, null, disabled: true)])" Class="px-0" />
+    <div class="d-flex flex-wrap align-center gap-2 mb-2">
+        <MudText Typo="Typo.h4" HtmlTag="h1">@agency.Name</MudText>
+        @if (agency.IsArchived)
+        {
+            <MudChip T="string">Archived</MudChip>
+        }
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="EditAsync">Edit</MudButton>
+        @if (agency.IsArchived)
+        {
+            <MudButton Variant="Variant.Outlined" OnClick="RestoreAsync">Restore</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ArchiveAsync">Archive</MudButton>
+        }
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-3 mb-4">
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>Jurisdiction</td><td><MudLink Href="@($"/jurisdictions/{agency.JurisdictionId}")">@agency.JurisdictionCode</MudLink></td></tr>
+                <tr><td>Abbreviation</td><td>@agency.Abbreviation</td></tr>
+                <tr><td>Website</td><td>@if (agency.WebsiteUrl is not null) { <MudLink Href="@agency.WebsiteUrl" Target="_blank" rel="noopener noreferrer">@agency.WebsiteUrl</MudLink> }</td></tr>
+                <tr><td>Notes</td><td style="white-space: pre-wrap">@agency.Notes</td></tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <div class="d-flex align-center mb-2">
+        <MudText Typo="Typo.h6" HtmlTag="h2">Programs</MudText>
+        <MudSpacer />
+        @if (!agency.IsArchived)
+        {
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddProgramAsync">Add program</MudButton>
+        }
+    </div>
+    <MudTable Items="programs" Dense="true" Breakpoint="Breakpoint.Sm" T="ProgramDto">
+        <HeaderContent><MudTh>Name</MudTh><MudTh>Species</MudTh><MudTh>Residency</MudTh><MudTh>Status</MudTh></HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name"><MudLink Href="@($"/programs/{context.Id}")">@context.Name</MudLink></MudTd>
+            <MudTd DataLabel="Species">@context.Species</MudTd>
+            <MudTd DataLabel="Residency">@context.Residency</MudTd>
+            <MudTd DataLabel="Status">@(context.IsArchived ? "Archived" : "Active")</MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText>No programs yet.</MudText></NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private AgencyDto? agency;
+    private IReadOnlyList<ProgramDto> programs = [];
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        agency = await Services.RunAsync<AgencyService, AgencyDto>(s => s.GetAsync(Id, CancellationToken.None));
+        programs = await Services.RunAsync<ProgramService, IReadOnlyList<ProgramDto>>(s => s.ListAsync(new ProgramFilter(AgencyId: Id, IncludeArchived: true), CancellationToken.None));
+    }
+
+    private async Task EditAsync()
+    {
+        var current = agency;
+        var saved = await EntityDialogs.ShowAsync<AgencyDto>(Dialogs, "Edit agency",
+            ctx => @<AgencyForm Existing="current" OnSaved="@((AgencyDto a) => ctx.Saved(a))" OnCancel="@(() => ctx.Cancel())" />);
+        if (saved is not null)
+        {
+            agency = saved;
+        }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (await Dialogs.ConfirmAsync("Archive agency?", $"{agency!.Name} will be hidden from active lists. Its history is kept and it can be restored. Archive its programs first.", "Archive")
+            && await Ui.TryAsync(async () => agency = await Services.RunAsync<AgencyService, AgencyDto>(s => s.ArchiveAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Agency archived.", Severity.Success);
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (await Ui.TryAsync(async () => agency = await Services.RunAsync<AgencyService, AgencyDto>(s => s.RestoreAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Agency restored.", Severity.Success);
+        }
+    }
+
+    private async Task AddProgramAsync()
+    {
+        var created = await EntityDialogs.ShowAsync<ProgramDto>(Dialogs, "New program",
+            ctx => @<ProgramForm DefaultAgencyId="Id" OnSaved="@((ProgramDto p) => ctx.Saved(p))" OnCancel="@(() => ctx.Cancel())" />, MaxWidth.Medium);
+        if (created is not null)
+        {
+            Navigation.NavigateTo($"/programs/{created.Id}");
+        }
+    }
+}

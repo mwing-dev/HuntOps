@@ -1,6 +1,6 @@
 using HuntOps.Application.Access;
 using HuntOps.Application.Common;
-using HuntOps.Domain.Actions;
+using HuntOps.Application.Users;
 using HuntOps.Domain.Users;
 using HuntOps.Infrastructure;
 using HuntOps.Infrastructure.Logging;
@@ -49,10 +49,15 @@ internal static class ApiKeyCommand
 
         builder.AddHuntOpsLogging("huntops-cli", logger => logger.MinimumLevel.Is(LogEventLevel.Warning));
         builder.Services.AddHuntOpsInfrastructure();
-        builder.Services.Replace(ServiceDescriptor.Scoped<ICurrentActor, CliActor>());
+        var actor = new CliActor();
+        builder.Services.Replace(ServiceDescriptor.Scoped<ICurrentActor>(_ => actor));
 
         using var host = builder.Build();
         await using var scope = host.Services.CreateAsyncScope();
+
+        // Keys belong to the owner; before an owner exists they use the placeholder and are adopted at bootstrap.
+        actor.UserId = await scope.ServiceProvider.GetRequiredService<IOwnerDirectory>().GetOwnerUserIdAsync(CancellationToken.None)
+            ?? Owner.PlaceholderUserId;
         var service = scope.ServiceProvider.GetRequiredService<ApiKeyService>();
 
         try
@@ -115,13 +120,4 @@ internal static class ApiKeyCommand
 
     private static int? IntOption(string[] args, string name) =>
         int.TryParse(Option(args, name), System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var value) ? value : null;
-
-    private sealed class CliActor : ICurrentActor
-    {
-        public string ActorId => "cli";
-
-        public string UserId => Owner.UserId;
-
-        public ChangeChannel Channel => ChangeChannel.Cli;
-    }
 }

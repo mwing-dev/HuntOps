@@ -1,6 +1,9 @@
 using HuntOps.Application;
 using HuntOps.Application.Abstractions;
+using HuntOps.Application.Users;
+using HuntOps.Infrastructure.Identity;
 using HuntOps.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -23,6 +26,15 @@ public static class DependencyInjection
         services.AddScoped<IHuntOpsDb>(provider => provider.GetRequiredService<HuntOpsDbContext>());
         services.AddSingleton<IDatabaseErrorClassifier, PostgresErrorClassifier>();
         services.AddHuntOpsApplication();
+        services.AddOptions<OwnerDefaultsOptions>()
+            .Configure<IConfiguration>((options, configuration) =>
+                options.TimeZoneId = configuration["HUNTOPS_OWNER_TIMEZONE"] is { Length: > 0 } zone ? zone : options.TimeZoneId);
+
+        // Identity stores (users, password hashing, lockout). Cookie sign-in is added by the web host only.
+        services.AddIdentityCore<AppUser>(IdentityPolicy.Apply)
+            .AddEntityFrameworkStores<HuntOpsDbContext>();
+        services.AddScoped<IOwnerDirectory, OwnerDirectory>();
+        services.AddScoped<OwnerBootstrapper>();
         return services;
     }
 

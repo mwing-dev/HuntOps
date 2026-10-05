@@ -1,0 +1,119 @@
+@inject AppServices Services
+@inject UiErrors Ui
+
+<FormErrorSummary Errors="errors" ShownFields="@Shown" OnReload="ReloadAsync" />
+
+<MudGrid Spacing="2">
+    <MudItem xs="12" sm="6">
+        <MudSelect T="Guid?" Value="agencyId" ValueChanged="AgencyChangedAsync" Label="Agency" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                   Error="@errors.Has("agencyId")" ErrorText="@errors.For("agencyId")">
+            @foreach (var a in agencies)
+            {
+                <MudSelectItem T="Guid?" Value="@a.Id">@a.JurisdictionCode · @a.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudSelect T="Guid?" @bind-Value="parentProgramId" Label="Umbrella program (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true"
+                   HelperText="Its events also apply to this program" Error="@errors.Has("parentProgramId")" ErrorText="@errors.For("parentProgramId")">
+            @foreach (var p in siblings.Where(p => p.Id != Existing?.Id))
+            {
+                <MudSelectItem T="Guid?" Value="@p.Id">@p.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="name" Label="Name" Placeholder="Resident Antelope – Firearm/Muzzleloader" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                      Error="@errors.Has("name")" ErrorText="@errors.For("name")" />
+    </MudItem>
+    <MudItem xs="6" sm="4"><MudTextField @bind-Value="species" Label="Species" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("species")" ErrorText="@errors.For("species")" /></MudItem>
+    <MudItem xs="6" sm="4"><MudTextField @bind-Value="method" Label="Weapon / method" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("method")" ErrorText="@errors.For("method")" /></MudItem>
+    <MudItem xs="6" sm="4"><MudTextField @bind-Value="residency" Label="Residency" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("residency")" ErrorText="@errors.For("residency")" /></MudItem>
+    <MudItem xs="6" sm="4"><MudTextField @bind-Value="permitType" Label="Permit type" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("permitType")" ErrorText="@errors.For("permitType")" /></MudItem>
+    <MudItem xs="6" sm="4"><MudTextField @bind-Value="unit" Label="Unit / zone" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("unit")" ErrorText="@errors.For("unit")" /></MudItem>
+    <MudItem xs="6" sm="4"><MudTextField @bind-Value="category" Label="Category" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("category")" ErrorText="@errors.For("category")" /></MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="websiteUrl" Label="Website" Placeholder="https://" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Error="@errors.Has("websiteUrl")" ErrorText="@errors.For("websiteUrl")" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="notes" Label="Notes" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("notes")" ErrorText="@errors.For("notes")" />
+    </MudItem>
+</MudGrid>
+
+<div class="d-flex justify-end gap-2 mt-4">
+    <MudButton OnClick="OnCancel">Cancel</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save</MudButton>
+</div>
+
+@code {
+    private static readonly string[] Shown = ["agencyId", "parentProgramId", "name", "species", "method", "residency", "permitType", "unit", "category", "websiteUrl", "notes"];
+    private readonly FormErrors errors = new();
+    private IReadOnlyList<AgencyDto> agencies = [];
+    private IReadOnlyList<ProgramDto> siblings = [];
+    private bool saving;
+    private Guid? agencyId, parentProgramId;
+    private string? name, species, method, residency, permitType, unit, category, websiteUrl, notes;
+    private IReadOnlyDictionary<string, string>? attributes;
+    private uint? version;
+
+    [Parameter] public ProgramDto? Existing { get; set; }
+    [Parameter] public Guid? DefaultAgencyId { get; set; }
+    [Parameter] public EventCallback<ProgramDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        agencies = await Services.RunAsync<AgencyService, IReadOnlyList<AgencyDto>>(s => s.ListAsync(null, false, CancellationToken.None));
+        agencyId = DefaultAgencyId;
+        Fill(Existing);
+        await LoadSiblingsAsync();
+    }
+
+    private void Fill(ProgramDto? p)
+    {
+        if (p is null)
+        {
+            return;
+        }
+
+        (agencyId, parentProgramId, name, species, method, residency) = (p.AgencyId, p.ParentProgramId, p.Name, p.Species, p.Method, p.Residency);
+        (permitType, unit, category, websiteUrl, notes, attributes, version) = (p.PermitType, p.Unit, p.Category, p.WebsiteUrl, p.Notes, p.Attributes, p.Version);
+    }
+
+    private async Task AgencyChangedAsync(Guid? value)
+    {
+        agencyId = value;
+        parentProgramId = null;
+        await LoadSiblingsAsync();
+    }
+
+    private async Task LoadSiblingsAsync() =>
+        siblings = agencyId is { } id
+            ? await Services.RunAsync<ProgramService, IReadOnlyList<ProgramDto>>(s => s.ListAsync(new ProgramFilter(AgencyId: id), CancellationToken.None))
+            : [];
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        ProgramDto? saved = null;
+        var input = new ProgramInput(agencyId, name, parentProgramId, species, method, residency, permitType, unit, category, attributes, websiteUrl, notes, version);
+        var ok = await Ui.TryAsync(async () => saved = Existing is null
+            ? await Services.RunAsync<ProgramService, ProgramDto>(s => s.CreateAsync(input, CancellationToken.None))
+            : await Services.RunAsync<ProgramService, ProgramDto>(s => s.UpdateAsync(Existing.Id, input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok && saved is not null)
+        {
+            await OnSaved.InvokeAsync(saved);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (Existing is not null)
+        {
+            Fill(await Services.RunAsync<ProgramService, ProgramDto>(s => s.GetAsync(Existing.Id, CancellationToken.None)));
+            errors.Clear();
+        }
+    }
+}

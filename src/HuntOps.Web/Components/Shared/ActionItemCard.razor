@@ -1,0 +1,72 @@
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<MudCard Outlined="true" Class="mb-2 action-item" data-action-id="@Item.ActionId">
+    <MudCardContent Class="pb-1">
+        <div class="d-flex flex-wrap align-center gap-2">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">@Item.JurisdictionCode</MudChip>
+            <MudText Typo="Typo.subtitle1"><b>@Item.ProgramName</b></MudText>
+            <MudSpacer />
+            <StatusChip Status="Item.Status" />
+        </div>
+        <MudText Typo="Typo.body1" Class="mt-1">@Item.Title</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary">@Headline</MudText>
+        <div class="d-flex flex-wrap gap-4 mt-1">
+            <MudText Typo="Typo.caption">Starts: @(TimeDisplay.Date(Item.StartDate) ?? Item.StartDate)</MudText>
+            @if (Item.EndDate is not null)
+            {
+                <MudText Typo="Typo.caption">Closes: @TimeDisplay.Date(Item.EndDate)</MudText>
+            }
+            @if (!ActionStatusResolver.IsResolved(Item.Status))
+            {
+                <MudText Typo="Typo.caption" Color="@(Item.DaysRemaining <= 3 ? Color.Error : Color.Default)"><b>@TimeDisplay.DaysRemaining(Item.DaysRemaining)</b></MudText>
+            }
+            else if (Item.Outcome is not null)
+            {
+                <MudText Typo="Typo.caption">Outcome: @Item.Outcome</MudText>
+            }
+        </div>
+    </MudCardContent>
+    <MudCardActions Class="flex-wrap pt-0">
+        <MudButton Size="Size.Small" Href="@($"/events/{Item.EventId}")" StartIcon="@Icons.Material.Filled.OpenInNew">View</MudButton>
+        @if (Item.Link is not null)
+        {
+            <MudButton Size="Size.Small" Href="@Item.Link" Target="_blank" rel="noopener noreferrer" StartIcon="@Icons.Material.Filled.Language">Agency site</MudButton>
+        }
+        <MudSpacer />
+        @if (ActionStatusResolver.IsResolved(Item.Status))
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ChangeAsync(ActionResolution.Reopened)">Reopen</MudButton>
+        }
+        else
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => ChangeAsync(ActionResolution.NotApplicable)">Not applicable</MudButton>
+            <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Check" OnClick="() => ChangeAsync(ActionResolution.Completed)">Mark completed</MudButton>
+        }
+    </MudCardActions>
+</MudCard>
+
+@code {
+    [Parameter, EditorRequired] public ActionItemDto Item { get; set; } = default!;
+    [Parameter, EditorRequired] public Instant Now { get; set; }
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private string Headline
+    {
+        get
+        {
+            TimeFormats.TryParseInstant(Item.StartsAtUtc, out var startsAt);
+            return TimeDisplay.Headline(Item.EventTypeName, Item.IsWindow, Item.StartDate, Item.EndDate, Now, startsAt) + $" · {Item.SeasonYear}";
+        }
+    }
+
+    private async Task ChangeAsync(ActionResolution mode)
+    {
+        var updated = await ActionStatusDialog.ShowAsync(Dialogs, Item.ActionId, Item.Title, mode);
+        if (updated is not null)
+        {
+            Snackbar.Add($"\"{Item.Title}\": {Labels.Status(updated.Status)}", Severity.Success);
+            await OnChanged.InvokeAsync();
+        }
+    }
+}

@@ -1,0 +1,47 @@
+@inject IDateTimeZoneProvider Zones
+
+<MudAutocomplete T="string"
+                 Label="@Label"
+                 Value="@Value"
+                 ValueChanged="OnValueChanged"
+                 SearchFunc="SearchAsync"
+                 MaxItems="25"
+                 ResetValueOnEmptyText="false"
+                 CoerceText="false"
+                 CoerceValue="true"
+                 Clearable="@Clearable"
+                 Placeholder="@Placeholder"
+                 HelperText="@HelperText"
+                 Error="@Error"
+                 ErrorText="@ErrorText"
+                 Variant="Variant.Outlined"
+                 Margin="Margin.Dense" />
+
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "Time zone";
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? HelperText { get; set; } = "IANA zone, e.g. America/Chicago";
+    [Parameter] public bool Clearable { get; set; }
+    [Parameter] public bool Error { get; set; }
+    [Parameter] public string? ErrorText { get; set; }
+
+    private Task OnValueChanged(string? value) => ValueChanged.InvokeAsync(value);
+
+    private Task<IEnumerable<string>> SearchAsync(string? text, CancellationToken cancellationToken)
+    {
+        IEnumerable<string> ids = Zones.Ids;
+        if (!string.IsNullOrWhiteSpace(text))
+        {
+            var term = text.Trim().Replace(' ', '_');
+            ids = ids.Where(id => id.Contains(term, StringComparison.OrdinalIgnoreCase));
+        }
+        else
+        {
+            ids = ids.Where(id => id.StartsWith("America/", StringComparison.Ordinal) || id.StartsWith("Pacific/", StringComparison.Ordinal));
+        }
+
+        return Task.FromResult(ids.OrderBy(id => id, StringComparer.Ordinal).Take(50));
+    }
+}

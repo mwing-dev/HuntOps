@@ -1,12 +1,15 @@
 using HuntOps.Infrastructure;
 using HuntOps.Infrastructure.Logging;
+using HuntOps.Infrastructure.Identity;
 using HuntOps.Infrastructure.Persistence;
 using Serilog.Events;
 
 namespace HuntOps.Worker.Migrations;
 
 /// <summary>
-/// <c>HuntOps.Worker migrate</c>: applies pending EF Core migrations and exits.
+/// <c>HuntOps.Worker migrate</c>: applies pending EF Core migrations, bootstraps the owner account
+/// (see <see cref="OwnerBootstrapper"/>) and exits. Exit code 1 means migration failed or the owner bootstrap
+/// configuration is invalid.
 /// Docker Compose runs this as the one-shot <c>huntops-migrate</c> service before web and worker start.
 /// </summary>
 internal static class MigrateCommand
@@ -31,7 +34,11 @@ internal static class MigrateCommand
         try
         {
             await DatabaseMigrator.MigrateAsync(host.Services, logger, TimeSpan.FromSeconds(60), CancellationToken.None);
-            return 0;
+
+            // Owner bootstrap runs here, before web/worker start, so a bad configuration is reported once and clearly.
+            await using var scope = host.Services.CreateAsyncScope();
+            var bootstrap = await scope.ServiceProvider.GetRequiredService<OwnerBootstrapper>().RunAsync(CancellationToken.None);
+            return bootstrap.Outcome == OwnerBootstrapOutcome.InvalidConfiguration ? 1 : 0;
         }
 #pragma warning disable CA1031 // Top-level command: report any failure as a non-zero exit code.
         catch (Exception ex)

@@ -39,7 +39,7 @@ public sealed class ActionStatusChange
 
     public RequiredAction RequiredAction { get; init; } = null!;
 
-    /// <summary>Whose status this is. V1 has a single owner (<see cref="Users.Owner.UserId"/>).</summary>
+    /// <summary>Whose status this is: the owner's Identity user id (transiently <see cref="Users.Owner.PlaceholderUserId"/>).</summary>
     public required string UserId { get; init; }
 
     public ActionResolution Status { get; init; }

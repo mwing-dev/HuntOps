@@ -50,6 +50,19 @@ public static class TimeFormats
         return result.Success;
     }
 
+    public static bool TryParseInstant(string? text, out Instant instant)
+    {
+        instant = default;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var result = InstantFormat.Parse(text.Trim());
+        instant = result.Success ? result.Value : default;
+        return result.Success;
+    }
+
     public static string Format(LocalDate date) => DatePattern.Format(date);
 
     public static string? Format(LocalDate? date) => date is { } value ? DatePattern.Format(value) : null;

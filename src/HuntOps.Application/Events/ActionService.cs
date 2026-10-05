@@ -43,6 +43,9 @@ public sealed record ActionItemDto(
     Guid EventId,
     string EventName,
     string EventTypeKey,
+    string EventTypeName,
+    EventCategory EventCategory,
+    bool IsWindow,
     int SeasonYear,
     string StartDate,
     string? EndDate,
@@ -272,6 +275,7 @@ public sealed class ActionService(IHuntOpsDb db, IClock clock, IDateTimeZoneProv
         var actions = await db.RequiredActions
             .AsNoTracking()
             .Include(a => a.ProgramEvent).ThenInclude(e => e.Program).ThenInclude(p => p.Agency).ThenInclude(g => g.Jurisdiction)
+            .Include(a => a.ProgramEvent).ThenInclude(e => e.EventType)
             .Where(a => a.ArchivedAt == null
                         && a.ProgramEvent.ArchivedAt == null
                         && a.ProgramEvent.Program.ArchivedAt == null
@@ -286,6 +290,37 @@ public sealed class ActionService(IHuntOpsDb db, IClock clock, IDateTimeZoneProv
             .ThenBy(a => a.ProgramEvent.Program.Name, StringComparer.Ordinal)
             .Select(a => ToItem(a, latest.GetValueOrDefault(a.Id), now))
             .Where(item => includeResolved || !ActionStatusResolver.IsResolved(item.Status))
+            .ToList();
+    }
+
+    /// <summary>Actions whose latest decision (completed / not applicable / cancelled) was recorded in the last <paramref name="days"/> days, newest first.</summary>
+    public async Task<IReadOnlyList<ActionItemDto>> RecentlyResolvedAsync(int? days, CancellationToken cancellationToken)
+    {
+        var v = new InputValidator(zones);
+        var lookbackDays = v.IntRange("days", days ?? 30, 1, 365, required: true) ?? 30;
+        v.ThrowIfInvalid();
+
+        var now = clock.GetCurrentInstant();
+        var since = now - Duration.FromDays(lookbackDays);
+        var actionIds = await db.ActionStatusChanges
+            .Where(c => c.UserId == actor.UserId && c.ChangedAt >= since)
+            .Select(c => c.RequiredActionId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        var actions = await db.RequiredActions
+            .AsNoTracking()
+            .Include(a => a.ProgramEvent).ThenInclude(e => e.Program).ThenInclude(p => p.Agency).ThenInclude(g => g.Jurisdiction)
+            .Include(a => a.ProgramEvent).ThenInclude(e => e.EventType)
+            .Where(a => actionIds.Contains(a.Id) && a.ArchivedAt == null && a.ProgramEvent.ArchivedAt == null)
+            .ToListAsync(cancellationToken);
+
+        var latest = await ActionStatusLookup.LatestAsync(db, actions.Select(a => a.Id), actor.UserId, cancellationToken);
+        return actions
+            .Where(a => latest.TryGetValue(a.Id, out var change) && change.ChangedAt >= since)
+            .OrderByDescending(a => latest[a.Id].ChangedAt)
+            .Select(a => ToItem(a, latest[a.Id], now))
+            .Where(item => ActionStatusResolver.IsResolved(item.Status))
             .ToList();
     }
 
@@ -309,7 +344,7 @@ public sealed class ActionService(IHuntOpsDb db, IClock clock, IDateTimeZoneProv
             ActionStatusResolver.IsResolved(status) ? latest?.Outcome : null,
             TimeFormats.Format(latest?.ChangedAt),
             TimeFormats.Format(deadline), daysRemaining,
-            e.Id, e.Name, e.EventTypeKey, e.SeasonYear,
+            e.Id, e.Name, e.EventTypeKey, e.EventType.DisplayName, e.EventType.Category, e.IsWindow, e.SeasonYear,
             TimeFormats.Format(e.StartDate), TimeFormats.Format(e.EndDate),
             TimeFormats.Format(e.StartsAtUtc), TimeFormats.Format(e.EndsAtUtc), e.TimeZoneId,
             program.Id, program.Name, program.Species, program.Agency.Jurisdiction.Code, program.Agency.Name,

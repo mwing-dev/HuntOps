@@ -1,0 +1,68 @@
+@inject AppServices Services
+@inject UiErrors Ui
+
+<FormErrorSummary Errors="errors" ShownFields="@(["title", "kind", "notes"])" OnReload="ReloadAsync" />
+
+<MudTextField @bind-Value="title" Label="What do you need to do?" Placeholder="Apply or buy preference point" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+              Error="@errors.Has("title")" ErrorText="@errors.For("title")" />
+<MudTextField @bind-Value="kind" Label="Kind (optional)" Placeholder="apply, purchase, report" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2"
+              Error="@errors.Has("kind")" ErrorText="@errors.For("kind")" />
+<MudCheckBox T="bool" @bind-Value="isOptional" Label="Optional (nice to do, not required)" Color="Color.Primary" Class="mt-1" />
+<MudTextField @bind-Value="notes" Label="Notes" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-1"
+              Error="@errors.Has("notes")" ErrorText="@errors.For("notes")" />
+
+<div class="d-flex justify-end gap-2 mt-4">
+    <MudButton OnClick="OnCancel">Cancel</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save</MudButton>
+</div>
+
+@code {
+    private readonly FormErrors errors = new();
+    private bool saving, isOptional;
+    private string? title, kind, notes;
+    private uint? version;
+
+    [Parameter] public Guid EventId { get; set; }
+    [Parameter] public ActionDto? Existing { get; set; }
+    [Parameter] public string? SuggestedTitle { get; set; }
+    [Parameter] public EventCallback<ActionDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override void OnInitialized()
+    {
+        title = SuggestedTitle;
+        Fill(Existing);
+    }
+
+    private void Fill(ActionDto? a)
+    {
+        if (a is not null)
+        {
+            (title, kind, isOptional, notes, version) = (a.Title, a.Kind, a.IsOptional, a.Notes, a.Version);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        ActionDto? saved = null;
+        var input = new ActionInput(title, kind, isOptional, notes, version);
+        var ok = await Ui.TryAsync(async () => saved = Existing is null
+            ? await Services.RunAsync<ActionService, ActionDto>(s => s.CreateAsync(EventId, input, CancellationToken.None))
+            : await Services.RunAsync<ActionService, ActionDto>(s => s.UpdateAsync(Existing.Id, input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok && saved is not null)
+        {
+            await OnSaved.InvokeAsync(saved);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (Existing is not null)
+        {
+            Fill(await Services.RunAsync<ActionService, ActionDto>(s => s.GetAsync(Existing.Id, CancellationToken.None)));
+            errors.Clear();
+        }
+    }
+}

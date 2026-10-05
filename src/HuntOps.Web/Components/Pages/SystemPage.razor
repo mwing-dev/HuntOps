@@ -1,0 +1,107 @@
+@page "/system"
+@inject SystemStatusService SystemStatus
+@inject OwnerTime OwnerTime
+
+<PageTitle>System · HuntOps</PageTitle>
+
+<div class="d-flex align-center mb-3">
+    <MudText Typo="Typo.h4" HtmlTag="h1">System</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="loading">Refresh</MudButton>
+</div>
+
+@if (status is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    @foreach (var warning in status.Warnings)
+    {
+        <MudAlert Severity="Severity.Warning" Dense="true" Class="mb-2">@warning</MudAlert>
+    }
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Database</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Reachable</td><td><Health Ok="status.DatabaseReachable" /> @status.DatabaseDetail</td></tr>
+                        <tr><td>Migrations</td><td><Health Ok="status.MigrationsApplied" /> @status.MigrationDetail</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Background worker</MudText>
+                @if (status.Workers.Count == 0)
+                {
+                    <MudText><Health Ok="false" /> No heartbeat recorded yet.</MudText>
+                }
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        @foreach (var worker in status.Workers)
+                        {
+                            <tr><td>Worker ID</td><td>@worker.WorkerId</td></tr>
+                            <tr><td>State</td><td><Health Ok="worker.Healthy" /> @(worker.Healthy ? "Healthy" : "Stale")</td></tr>
+                            <tr><td>Last heartbeat</td><td>@Format(worker.LastBeatAt) (@SystemStatusService.Ago(now - worker.LastBeatAt) ago)</td></tr>
+                            <tr><td>Running since</td><td>@Format(worker.StartedAt)</td></tr>
+                            <tr><td>Version</td><td>@worker.Version</td></tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Application</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Version</td><td>@status.Version</td></tr>
+                        <tr><td>Commit</td><td>@(status.Commit ?? "not set (HUNTOPS_GIT_COMMIT)")</td></tr>
+                        <tr><td>Environment</td><td>@status.Environment</td></tr>
+                        <tr><td>Uptime</td><td>@SystemStatusService.Ago(status.Uptime)</td></tr>
+                        <tr><td>Your time zone</td><td>@ownerZone</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Interfaces</MudText>
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>REST API</td><td><Health Ok="status.ApiEnabled" /> Enabled at /api (API key required)</td></tr>
+                        <tr><td>Swagger / OpenAPI</td><td>@if (status.SwaggerEnabled) { <MudLink Href="/swagger" Target="_blank">Enabled</MudLink> } else { <span>Disabled</span> }</td></tr>
+                        <tr><td>ntfy server</td><td><Health Ok="status.Ntfy.Healthy" /> @status.Ntfy.Detail</td></tr>
+                        <tr><td>Notifications</td><td>Not yet active (Phase 4)</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private SystemStatus? status;
+    private bool loading;
+    private Instant now;
+    private string ownerZone = "";
+    private DateTimeZone zone = DateTimeZone.Utc;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        ownerZone = await OwnerTime.TimeZoneIdAsync();
+        zone = OwnerTime.Zones.GetZoneOrNull(ownerZone) ?? DateTimeZone.Utc;
+        now = OwnerTime.Clock.GetCurrentInstant();
+        status = await SystemStatus.GetAsync(includeNtfy: true, CancellationToken.None);
+        loading = false;
+    }
+
+    private string Format(Instant instant) => TimeDisplay.Instant(instant, zone);
+}

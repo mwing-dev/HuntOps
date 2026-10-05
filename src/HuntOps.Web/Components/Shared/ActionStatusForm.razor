@@ -1,0 +1,80 @@
+@* Records a decision about an action through ActionService (append-only history). Used inside ActionStatusDialog. *@
+@inject AppServices Services
+@inject UiErrors Ui
+
+<FormErrorSummary Errors="errors" ShownFields="@(["outcome", "note"])" />
+
+<MudText Typo="Typo.body2" Class="mb-2">@Intro</MudText>
+
+@if (Mode is not ActionResolution.Reopened)
+{
+    <MudText Typo="Typo.caption">Outcome (optional)</MudText>
+    <div class="d-flex flex-wrap gap-1 mb-2">
+        @foreach (var preset in Labels.OutcomePresets)
+        {
+            var value = preset;
+            <MudChip T="string" Size="Size.Small" Variant="@(Outcome == value ? Variant.Filled : Variant.Outlined)" Color="Color.Primary" OnClick="() => Outcome = value">@value</MudChip>
+        }
+    </div>
+    <MudTextField @bind-Value="Outcome" Label="Outcome" Placeholder="Or type your own" Variant="Variant.Outlined" Margin="Margin.Dense"
+                  Error="@errors.Has("outcome")" ErrorText="@errors.For("outcome")" Clearable="true" />
+}
+
+<MudTextField @bind-Value="Note" Label="Note (optional)" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2"
+              Error="@errors.Has("note")" ErrorText="@errors.For("note")" />
+
+<div class="d-flex justify-end gap-2 mt-4">
+    @if (OnCancel.HasDelegate)
+    {
+        <MudButton Variant="Variant.Text" OnClick="OnCancel">Cancel</MudButton>
+    }
+    <MudButton Variant="Variant.Filled" Color="@ButtonColor" OnClick="SaveAsync" Disabled="saving">@ButtonText</MudButton>
+</div>
+
+@code {
+    private readonly FormErrors errors = new();
+    private bool saving;
+
+    [Parameter, EditorRequired] public Guid ActionId { get; set; }
+    [Parameter, EditorRequired] public string ActionTitle { get; set; } = "";
+    [Parameter] public ActionResolution Mode { get; set; } = ActionResolution.Completed;
+    [Parameter] public string? Outcome { get; set; }
+    [Parameter] public string? Note { get; set; }
+    [Parameter] public EventCallback<ActionDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private string Intro => Mode switch
+    {
+        ActionResolution.Completed => $"Mark \"{ActionTitle}\" as completed.",
+        ActionResolution.NotApplicable => $"Mark \"{ActionTitle}\" as not applicable this season (e.g. you are not hunting it).",
+        ActionResolution.Cancelled => $"Cancel \"{ActionTitle}\" (e.g. the agency cancelled the draw).",
+        _ => $"Reopen \"{ActionTitle}\". Its status will follow the event dates again; the history keeps the earlier decision.",
+    };
+
+    private string ButtonText => Mode switch
+    {
+        ActionResolution.Completed => "Complete",
+        ActionResolution.NotApplicable => "Not applicable",
+        ActionResolution.Cancelled => "Cancel action",
+        _ => "Reopen",
+    };
+
+    private Color ButtonColor => Mode == ActionResolution.Completed ? Color.Success : Color.Primary;
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        ActionDto? saved = null;
+        var ok = await Ui.TryAsync(async () =>
+        {
+            var input = new StatusChangeInput(Mode.ToString(), Mode == ActionResolution.Reopened ? null : Outcome, Note);
+            saved = await Services.RunAsync<ActionService, ActionDto>(s => s.ChangeStatusAsync(ActionId, input, CancellationToken.None));
+        }, errors);
+        saving = false;
+
+        if (ok && saved is not null)
+        {
+            await OnSaved.InvokeAsync(saved);
+        }
+    }
+}

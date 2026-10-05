@@ -1,0 +1,6 @@
+<MudChip T="string" Size="Size.Small" Color="@Labels.StatusColor(Status)" Variant="Variant.Filled" Class="ma-0">@Labels.Status(Status)</MudChip>
+
+@code {
+    [Parameter, EditorRequired]
+    public EffectiveActionStatus Status { get; set; }
+}

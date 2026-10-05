@@ -1,0 +1,92 @@
+@page "/settings/api-keys"
+@using HuntOps.Application.Access
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject OwnerTime OwnerTime
+
+<PageTitle>API keys · HuntOps</PageTitle>
+
+<div class="d-flex flex-wrap align-center gap-2 mb-2">
+    <MudText Typo="Typo.h4" HtmlTag="h1">API keys</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">Create key</MudButton>
+</div>
+<MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+    Keys let scripts and AI clients use the REST API (<MudLink Href="/swagger" Target="_blank">reference</MudLink>). Only a hash is stored; a key's secret is shown once, when it is created.
+</MudText>
+
+<MudTable Items="keys" Dense="true" Breakpoint="Breakpoint.Sm" Loading="loading" T="ApiKeyDto">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Prefix</MudTh>
+        <MudTh>Scope</MudTh>
+        <MudTh>Created</MudTh>
+        <MudTh>Last used</MudTh>
+        <MudTh>Expires</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name">@context.Name</MudTd>
+        <MudTd DataLabel="Prefix"><code>@context.Prefix</code></MudTd>
+        <MudTd DataLabel="Scope">@(context.Scopes.Contains("write") ? "Write" : "Read")</MudTd>
+        <MudTd DataLabel="Created">@Format(context.CreatedAt)</MudTd>
+        <MudTd DataLabel="Last used">@(Format(context.LastUsedAt) ?? "Never")</MudTd>
+        <MudTd DataLabel="Expires">@(Format(context.ExpiresAt) ?? "Never")</MudTd>
+        <MudTd DataLabel="Status">
+            <MudChip T="string" Size="Size.Small" Color="@(context.IsActive ? Color.Success : Color.Default)">@(context.RevokedAt is not null ? "Revoked" : context.IsActive ? "Active" : "Expired")</MudChip>
+        </MudTd>
+        <MudTd>
+            @if (context.RevokedAt is null)
+            {
+                <MudButton Size="Size.Small" Color="Color.Error" Variant="Variant.Text" OnClick="() => RevokeAsync(context)">Revoke</MudButton>
+            }
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent><MudText>No API keys yet.</MudText></NoRecordsContent>
+</MudTable>
+
+@code {
+    private IReadOnlyList<ApiKeyDto> keys = [];
+    private bool loading = true;
+    private DateTimeZone ownerZone = DateTimeZone.Utc;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ownerZone = OwnerTime.Zones.GetZoneOrNull(await OwnerTime.TimeZoneIdAsync()) ?? DateTimeZone.Utc;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        keys = await Services.RunAsync<ApiKeyService, IReadOnlyList<ApiKeyDto>>(s => s.ListAsync(CancellationToken.None));
+        loading = false;
+    }
+
+    private string? Format(string? instant) =>
+        TimeFormats.TryParseInstant(instant, out var at) ? TimeDisplay.Instant(at, ownerZone) : null;
+
+    private async Task CreateAsync()
+    {
+        var created = await EntityDialogs.ShowAsync<ApiKeyDto>(Dialogs, "Create API key",
+            ctx => @<ApiKeyCreateForm OnDone="@((ApiKeyDto k) => ctx.Saved(k))" OnCancel="@(() => ctx.Cancel())" />);
+        await LoadAsync();
+        if (created is not null)
+        {
+            Snackbar.Add($"API key '{created.Name}' created.", Severity.Success);
+        }
+    }
+
+    private async Task RevokeAsync(ApiKeyDto key)
+    {
+        if (await Dialogs.ConfirmAsync("Revoke API key?", $"Clients using '{key.Name}' ({key.Prefix}) will be rejected immediately. This cannot be undone.", "Revoke")
+            && await Ui.TryAsync(() => Services.RunAsync<ApiKeyService, ApiKeyDto>(s => s.RevokeAsync(key.Prefix, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add($"Revoked {key.Prefix}.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+}

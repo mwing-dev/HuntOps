@@ -1,0 +1,64 @@
+@page "/jurisdictions"
+@inject AppServices Services
+@inject IDialogService Dialogs
+@inject NavigationManager Navigation
+
+<PageTitle>Jurisdictions · HuntOps</PageTitle>
+
+<div class="d-flex flex-wrap align-center gap-2 mb-3">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Jurisdictions</MudText>
+    <MudSpacer />
+    <MudSwitch T="bool" Value="includeArchived" ValueChanged="ToggleArchivedAsync" Label="Show archived" Color="Color.Primary" />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New jurisdiction</MudButton>
+</div>
+
+<MudTable Items="items" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm" Loading="loading" OnRowClick="@((TableRowClickEventArgs<JurisdictionDto> e) => Navigation.NavigateTo($"/jurisdictions/{e.Item!.Id}"))" T="JurisdictionDto" RowStyle="cursor: pointer">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Code</MudTh>
+        <MudTh>Country</MudTh>
+        <MudTh>Time zone</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name"><MudLink Href="@($"/jurisdictions/{context.Id}")">@context.Name</MudLink></MudTd>
+        <MudTd DataLabel="Code">@context.Code</MudTd>
+        <MudTd DataLabel="Country">@context.Country</MudTd>
+        <MudTd DataLabel="Time zone">@context.TimeZoneId</MudTd>
+        <MudTd DataLabel="Status">@(context.IsArchived ? "Archived" : "Active")</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No jurisdictions yet. Create one (e.g. Kansas, KS, America/Chicago) to start tracking its programs.</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private IReadOnlyList<JurisdictionDto> items = [];
+    private bool includeArchived;
+    private bool loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        items = await Services.RunAsync<JurisdictionService, IReadOnlyList<JurisdictionDto>>(s => s.ListAsync(includeArchived, CancellationToken.None));
+        loading = false;
+    }
+
+    private Task ToggleArchivedAsync(bool value)
+    {
+        includeArchived = value;
+        return LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        var created = await EntityDialogs.ShowAsync<JurisdictionDto>(Dialogs, "New jurisdiction",
+            ctx => @<JurisdictionForm OnSaved="@((JurisdictionDto j) => ctx.Saved(j))" OnCancel="@(() => ctx.Cancel())" />);
+        if (created is not null)
+        {
+            Navigation.NavigateTo($"/jurisdictions/{created.Id}");
+        }
+    }
+}

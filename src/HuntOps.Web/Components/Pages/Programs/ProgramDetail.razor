@@ -1,0 +1,165 @@
+@page "/programs/{Id:guid}"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject OwnerTime OwnerTime
+
+<PageTitle>@(program?.Name ?? "Program") · HuntOps</PageTitle>
+
+@if (program is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudBreadcrumbs Items="@([new BreadcrumbItem("Programs", "/programs"), new BreadcrumbItem(program.Name, null, disabled: true)])" Class="px-0" />
+    <div class="d-flex flex-wrap align-center gap-2 mb-2">
+        <MudText Typo="Typo.h4" HtmlTag="h1">@program.JurisdictionCode @program.Name</MudText>
+        @if (program.IsArchived)
+        {
+            <MudChip T="string">Archived</MudChip>
+        }
+        <MudSpacer />
+        @if (!program.IsArchived)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" Href="@($"/events/new?programId={program.Id}")">Add event</MudButton>
+        }
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="EditAsync">Edit</MudButton>
+        @if (program.IsArchived)
+        {
+            <MudButton Variant="Variant.Outlined" OnClick="RestoreAsync">Restore</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ArchiveAsync">Archive</MudButton>
+        }
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="5">
+            <MudPaper Outlined="true" Class="pa-3">
+                <MudSimpleTable Dense="true" Elevation="0">
+                    <tbody>
+                        <tr><td>Agency</td><td><MudLink Href="@($"/agencies/{program.AgencyId}")">@program.AgencyName</MudLink></td></tr>
+                        <tr><td>Jurisdiction</td><td><MudLink Href="@($"/jurisdictions/{program.JurisdictionId}")">@program.JurisdictionCode</MudLink></td></tr>
+                        @if (parent is not null)
+                        {
+                            <tr><td>Umbrella program</td><td><MudLink Href="@($"/programs/{parent.Id}")">@parent.Name</MudLink></td></tr>
+                        }
+                        <tr><td>Species</td><td>@program.Species</td></tr>
+                        <tr><td>Weapon / method</td><td>@program.Method</td></tr>
+                        <tr><td>Residency</td><td>@program.Residency</td></tr>
+                        <tr><td>Permit type</td><td>@program.PermitType</td></tr>
+                        <tr><td>Unit / zone</td><td>@program.Unit</td></tr>
+                        <tr><td>Category</td><td>@program.Category</td></tr>
+                        @foreach (var (key, value) in program.Attributes)
+                        {
+                            <tr><td>@key</td><td>@value</td></tr>
+                        }
+                        <tr><td>Website</td><td>@if (program.WebsiteUrl is not null) { <MudLink Href="@program.WebsiteUrl" Target="_blank" rel="noopener noreferrer">@program.WebsiteUrl</MudLink> }</td></tr>
+                        <tr><td>Notes</td><td style="white-space: pre-wrap">@program.Notes</td></tr>
+                    </tbody>
+                </MudSimpleTable>
+            </MudPaper>
+
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="section-title">Upcoming events</MudText>
+            <MudPaper Outlined="true">
+                @if (upcoming.Count == 0)
+                {
+                    <MudText Class="pa-3">No upcoming or open events.</MudText>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        @foreach (var e in upcoming)
+                        {
+                            <MudListItem T="string" Href="@($"/events/{e.Id}")">
+                                <b>@e.EventTypeName @e.SeasonYear</b> · @Dates(e) <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">@Labels.Phase(e.Phase)</MudChip>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudPaper>
+
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="section-title">Required actions</MudText>
+            @if (openActions.Count == 0)
+            {
+                <MudPaper Outlined="true"><MudText Class="pa-3">No open actions for this program.</MudText></MudPaper>
+            }
+            @foreach (var item in openActions)
+            {
+                <ActionItemCard @key="item.ActionId" Item="item" Now="now" OnChanged="LoadAsync" />
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="7">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="mb-2">History by season</MudText>
+            <ProgramHistoryView Seasons="history" />
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private ProgramDto? program;
+    private ProgramDto? parent;
+    private IReadOnlyList<ProgramSeasonDto> history = [];
+    private List<EventDto> upcoming = [];
+    private List<ActionItemDto> openActions = [];
+    private Instant now;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        now = OwnerTime.Clock.GetCurrentInstant();
+        program = await Services.RunAsync<ProgramService, ProgramDto>(s => s.GetAsync(Id, CancellationToken.None));
+        parent = program.ParentProgramId is { } parentId
+            ? await Services.RunAsync<ProgramService, ProgramDto>(s => s.GetAsync(parentId, CancellationToken.None))
+            : null;
+        var userId = Services.CurrentUser.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? HuntOps.Domain.Users.Owner.PlaceholderUserId;
+        history = await Services.RunAsync<ProgramService, IReadOnlyList<ProgramSeasonDto>>(s => s.GetHistoryAsync(Id, userId, CancellationToken.None));
+        upcoming = history.SelectMany(s => s.Events).Select(e => e.Event)
+            .Where(e => e.Phase != EventPhase.Closed)
+            .OrderBy(e => e.StartsAtUtc, StringComparer.Ordinal)
+            .ToList();
+        var items = await Services.RunAsync<ActionService, IReadOnlyList<ActionItemDto>>(s => s.ActionItemsAsync(ActionService.MaxActionItemDays, false, CancellationToken.None));
+        var programEventIds = history.SelectMany(s => s.Events).Select(e => e.Event.Id).ToHashSet();
+        openActions = items.Where(i => programEventIds.Contains(i.EventId)).ToList();
+    }
+
+    private static string Dates(EventDto e) =>
+        e.IsWindow ? $"{TimeDisplay.Date(e.StartDate)} → {TimeDisplay.Date(e.EndDate)}" : TimeDisplay.Date(e.StartDate) ?? e.StartDate;
+
+    private async Task EditAsync()
+    {
+        var current = program;
+        var saved = await EntityDialogs.ShowAsync<ProgramDto>(Dialogs, "Edit program",
+            ctx => @<ProgramForm Existing="current" OnSaved="@((ProgramDto p) => ctx.Saved(p))" OnCancel="@(() => ctx.Cancel())" />, MaxWidth.Medium);
+        if (saved is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (await Dialogs.ConfirmAsync("Archive program?",
+                $"{program!.Name} will be hidden from active lists and its future events will no longer appear in upcoming lists or action items. Its events and history are kept, and it can be restored.",
+                "Archive")
+            && await Ui.TryAsync(async () => program = await Services.RunAsync<ProgramService, ProgramDto>(s => s.ArchiveAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Program archived.", Severity.Success);
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (await Ui.TryAsync(async () => program = await Services.RunAsync<ProgramService, ProgramDto>(s => s.RestoreAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Program restored.", Severity.Success);
+        }
+    }
+}

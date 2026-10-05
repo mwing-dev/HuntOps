@@ -1,0 +1,82 @@
+@* Month grid. Windows appear on their opening and closing days (and on the 1st if still open from an earlier month); single-date events on their date. *@
+<div class="calendar-grid" role="grid" aria-label="@MonthTitle">
+    @foreach (var day in WeekdayNames)
+    {
+        <div class="calendar-head" role="columnheader">@day</div>
+    }
+    @foreach (var date in Days())
+    {
+        <div class="calendar-day @(date.Month != Month.Month ? "outside" : "") @(date == Today ? "today" : "")" role="gridcell">
+            <div class="calendar-day-number">@date.Day</div>
+            @foreach (var entry in EntriesOn(date))
+            {
+                <a class="calendar-entry @Labels.CategoryCss(entry.Event.EventCategory)" href="@($"/events/{entry.Event.Id}")" title="@entry.Tooltip">@entry.Label</a>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly string[] WeekdayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+    /// <summary>Any date in the month to show.</summary>
+    [Parameter, EditorRequired] public LocalDate Month { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<EventDto> Events { get; set; } = [];
+    [Parameter] public LocalDate Today { get; set; }
+
+    private string MonthTitle => TimeDisplay.Date(Month);
+
+    private IEnumerable<LocalDate> Days()
+    {
+        var first = new LocalDate(Month.Year, Month.Month, 1);
+        var start = first.PlusDays(-((int)first.DayOfWeek % 7));
+        var last = first.PlusMonths(1).PlusDays(-1);
+        var end = last.PlusDays(6 - ((int)last.DayOfWeek % 7));
+        for (var d = start; d <= end; d = d.PlusDays(1))
+        {
+            yield return d;
+        }
+    }
+
+    private IEnumerable<Entry> EntriesOn(LocalDate date)
+    {
+        foreach (var e in Events)
+        {
+            if (!TimeFormats.TryParseDate(e.StartDate, out var start))
+            {
+                continue;
+            }
+
+            var prefix = $"{e.JurisdictionCode} {e.ProgramName}";
+            if (!e.IsWindow)
+            {
+                if (start == date)
+                {
+                    yield return new Entry(e, $"{prefix}: {e.EventTypeName}", $"{e.Name}");
+                }
+
+                continue;
+            }
+
+            TimeFormats.TryParseDate(e.EndDate, out var end);
+            var firstOfMonth = new LocalDate(Month.Year, Month.Month, 1);
+            if (date == firstOfMonth && start < firstOfMonth && end > firstOfMonth)
+            {
+                // A window that opened in an earlier month and is still open: show it once, on the 1st.
+                yield return new Entry(e, $"… {prefix}: {e.EventTypeName} open until {TimeDisplay.ShortDateOf(end)}", $"{e.Name} (open {TimeDisplay.Date(start)} → {TimeDisplay.Date(end)})");
+            }
+
+            if (start == date)
+            {
+                yield return new Entry(e, $"▶ {prefix}: {e.EventTypeName} opens", $"{e.Name} opens (closes {TimeDisplay.Date(end)})");
+            }
+
+            if (end == date)
+            {
+                yield return new Entry(e, $"■ {prefix}: {e.EventTypeName} closes", $"{e.Name} closes");
+            }
+        }
+    }
+
+    private sealed record Entry(EventDto Event, string Label, string Tooltip);
+}

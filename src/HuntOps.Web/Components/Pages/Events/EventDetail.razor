@@ -1,0 +1,237 @@
+@page "/events/{Id:guid}"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject OwnerTime OwnerTime
+
+<PageTitle>@(programEvent?.Name ?? "Event") · HuntOps</PageTitle>
+
+@if (programEvent is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudBreadcrumbs Items="@([new BreadcrumbItem("Programs", "/programs"), new BreadcrumbItem(programEvent.ProgramName, $"/programs/{programEvent.ProgramId}"), new BreadcrumbItem(programEvent.EventTypeName, null, disabled: true)])" Class="px-0" />
+
+    <div class="d-flex flex-wrap align-center gap-2 mb-2">
+        <MudText Typo="Typo.h4" HtmlTag="h1">@programEvent.Name</MudText>
+        <MudSpacer />
+        @if (!programEvent.IsArchived)
+        {
+            <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" Href="@($"/events/{Id}/edit")">Edit</MudButton>
+            @if (programEvent.VerificationStatus != VerificationStatus.Verified)
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" StartIcon="@Icons.Material.Filled.Verified" OnClick="VerifyAsync">Mark verified</MudButton>
+            }
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ArchiveAsync">Archive</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Outlined" OnClick="RestoreAsync">Restore</MudButton>
+        }
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mb-3">
+        <MudChip T="string" Color="@Labels.CategoryColor(programEvent.EventCategory)">@programEvent.EventTypeName</MudChip>
+        <MudChip T="string" Variant="Variant.Outlined">Season @(programEvent.SeasonLabel ?? programEvent.SeasonYear.ToString(System.Globalization.CultureInfo.InvariantCulture))</MudChip>
+        @if (programEvent.Qualifier.Length > 0)
+        {
+            <MudChip T="string" Variant="Variant.Outlined">@programEvent.Qualifier</MudChip>
+        }
+        <MudChip T="string" Variant="Variant.Outlined">@Labels.Phase(programEvent.Phase)</MudChip>
+        <MudChip T="string" Color="@(programEvent.VerificationStatus == VerificationStatus.Verified ? Color.Success : Color.Warning)" Variant="Variant.Outlined">
+            @(programEvent.VerificationStatus == VerificationStatus.Verified ? $"Verified {TimeDisplay.Date(programEvent.LastVerifiedAt?[..10])}" : "Unverified")
+        </MudChip>
+        @if (programEvent.IsArchived)
+        {
+            <MudChip T="string">Archived</MudChip>
+        }
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" md="6">
+            <MudPaper Outlined="true" Class="pa-3">
+                <ScheduleView Display="schedule" />
+                @if (programEvent.Description is not null)
+                {
+                    <MudText Typo="Typo.body2" Class="mt-3" Style="white-space: pre-wrap">@programEvent.Description</MudText>
+                }
+                @if (programEvent.SourceUrl is not null)
+                {
+                    <MudButton Class="mt-2" Size="Size.Small" Href="@programEvent.SourceUrl" Target="_blank" rel="noopener noreferrer" StartIcon="@Icons.Material.Filled.Language">Agency page</MudButton>
+                }
+                <MudText Typo="Typo.caption" Class="d-block mt-2 mud-text-secondary">
+                    Program: <MudLink Href="@($"/programs/{programEvent.ProgramId}")" Typo="Typo.caption">@programEvent.JurisdictionCode @programEvent.ProgramName</MudLink> · Agency: @programEvent.AgencyName · Origin: @programEvent.OriginKind
+                </MudText>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center">
+                <MudText Typo="Typo.h6" HtmlTag="h2">Required actions</MudText>
+                <MudSpacer />
+                @if (!programEvent.IsArchived)
+                {
+                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddActionAsync">Add action</MudButton>
+                }
+            </div>
+            @if (programEvent.Actions.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">No actions. Add one if this event requires you to do something.</MudText>
+            }
+            @foreach (var action in programEvent.Actions)
+            {
+                <MudPaper Outlined="true" Class="pa-3 mb-2 event-action" data-action-id="@action.Id">
+                    <div class="d-flex flex-wrap align-center gap-2">
+                        <MudText Typo="Typo.subtitle1"><b>@action.Title</b></MudText>
+                        @if (action.IsOptional)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Optional</MudChip>
+                        }
+                        <MudSpacer />
+                        @if (action.IsArchived)
+                        {
+                            <MudChip T="string" Size="Size.Small">Archived</MudChip>
+                        }
+                        else
+                        {
+                            <StatusChip Status="action.Status" />
+                        }
+                    </div>
+                    @if (action.Outcome is not null)
+                    {
+                        <MudText Typo="Typo.body2">Outcome: @action.Outcome</MudText>
+                    }
+                    @if (!action.IsArchived && !programEvent.IsArchived)
+                    {
+                        <div class="d-flex flex-wrap gap-1 mt-2">
+                            @if (ActionStatusResolver.IsResolved(action.Status))
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => ChangeAsync(action, ActionResolution.Reopened)">Reopen</MudButton>
+                            }
+                            else
+                            {
+                                <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Success" OnClick="() => ChangeAsync(action, ActionResolution.Completed)">Mark completed</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => ChangeAsync(action, ActionResolution.NotApplicable)">Not applicable</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="() => ChangeAsync(action, ActionResolution.Cancelled)">Cancel</MudButton>
+                            }
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => EditActionAsync(action)">Edit</MudButton>
+                            <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => ArchiveActionAsync(action)">Archive</MudButton>
+                        </div>
+                    }
+                    @if (histories.TryGetValue(action.Id, out var history) && history.Count > 0)
+                    {
+                        <MudText Typo="Typo.caption" Class="d-block mt-2">History</MudText>
+                        <MudTimeline TimelinePosition="TimelinePosition.Start" Class="pa-0 ma-0">
+                            @foreach (var change in history)
+                            {
+                                <MudTimelineItem Size="Size.Small" Color="Color.Default">
+                                    <MudText Typo="Typo.body2"><b>@Labels.Resolution(change.Status)</b>@(change.Outcome is null ? "" : $": {change.Outcome}")</MudText>
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">@ChangedAt(change) · via @change.ChangedVia.ToString().ToLowerInvariant() · @change.ChangedBy</MudText>
+                                    @if (change.Note is not null)
+                                    {
+                                        <MudText Typo="Typo.caption" Class="d-block">@change.Note</MudText>
+                                    }
+                                </MudTimelineItem>
+                            }
+                        </MudTimeline>
+                    }
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private EventDto? programEvent;
+    private ScheduleDisplay? schedule;
+    private Dictionary<Guid, IReadOnlyList<ActionStatusChangeDto>> histories = [];
+    private DateTimeZone ownerZone = DateTimeZone.Utc;
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        programEvent = await Services.RunAsync<ProgramEventService, EventDto>(s => s.GetAsync(Id, CancellationToken.None));
+        schedule = await OwnerTime.DescribeAsync(programEvent);
+        ownerZone = OwnerTime.Zones.GetZoneOrNull(await OwnerTime.TimeZoneIdAsync()) ?? DateTimeZone.Utc;
+        histories = [];
+        foreach (var action in programEvent.Actions)
+        {
+            histories[action.Id] = await Services.RunAsync<ActionService, IReadOnlyList<ActionStatusChangeDto>>(s => s.HistoryAsync(action.Id, CancellationToken.None));
+        }
+    }
+
+    private string ChangedAt(ActionStatusChangeDto change) =>
+        TimeFormats.TryParseInstant(change.ChangedAt, out var at) ? TimeDisplay.Instant(at, ownerZone) : change.ChangedAt;
+
+    private async Task ChangeAsync(ActionDto action, ActionResolution mode)
+    {
+        if (await ActionStatusDialog.ShowAsync(Dialogs, action.Id, action.Title, mode) is { } updated)
+        {
+            Snackbar.Add($"\"{action.Title}\": {Labels.Status(updated.Status)}", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task AddActionAsync()
+    {
+        var eventId = Id;
+        var created = await EntityDialogs.ShowAsync<ActionDto>(Dialogs, "Add required action",
+            ctx => @<ActionForm EventId="eventId" OnSaved="@((ActionDto a) => ctx.Saved(a))" OnCancel="@(() => ctx.Cancel())" />);
+        if (created is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditActionAsync(ActionDto action)
+    {
+        var eventId = Id;
+        var saved = await EntityDialogs.ShowAsync<ActionDto>(Dialogs, "Edit action",
+            ctx => @<ActionForm EventId="eventId" Existing="action" OnSaved="@((ActionDto a) => ctx.Saved(a))" OnCancel="@(() => ctx.Cancel())" />);
+        if (saved is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task ArchiveActionAsync(ActionDto action)
+    {
+        if (await Dialogs.ConfirmAsync("Archive action?", $"\"{action.Title}\" will be hidden. Its status history is kept.", "Archive")
+            && await Ui.TryAsync(() => Services.RunAsync<ActionService, ActionDto>(s => s.ArchiveAsync(action.Id, CancellationToken.None)), Snackbar))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task VerifyAsync()
+    {
+        if (await Ui.TryAsync(() => Services.RunAsync<ProgramEventService, EventDto>(s => s.VerifyAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Dates marked as verified.", Severity.Success);
+            await LoadAsync();
+        }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (await Dialogs.ConfirmAsync("Archive event?", "The event is hidden from upcoming lists and the calendar. Its actions and their history are kept, and it can be restored.", "Archive")
+            && await Ui.TryAsync(() => Services.RunAsync<ProgramEventService, EventDto>(s => s.ArchiveAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (await Ui.TryAsync(() => Services.RunAsync<ProgramEventService, EventDto>(s => s.RestoreAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            await LoadAsync();
+        }
+    }
+}

@@ -1,12 +1,144 @@
 @page "/"
+@inject AppServices Services
+@inject SystemStatusService SystemStatus
+@inject OwnerTime OwnerTime
 
-<PageTitle>HuntOps</PageTitle>
+<PageTitle>Dashboard · HuntOps</PageTitle>
 
-<h1>HuntOps</h1>
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-3">Dashboard</MudText>
 
-<p>Hunting applications, permits, points, deadlines, and season operations.</p>
+@if (loading)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-4" />
+}
+else
+{
+    @foreach (var warning in warnings)
+    {
+        <MudAlert Severity="Severity.Warning" Class="mb-2" Dense="true">@warning <MudLink Href="/system" Class="ml-1">System status</MudLink></MudAlert>
+    }
 
-<p>
-    This is the Phase 1 scaffold. The dashboard arrives in Phase 3.
-    Service health: <a href="/health/ready">/health/ready</a>.
-</p>
+    <section aria-labelledby="action-required">
+        <MudText Typo="Typo.h5" HtmlTag="h2" id="action-required" Class="section-title">Action required</MudText>
+        @if (required.Count == 0)
+        {
+            <MudPaper Outlined="true" Class="pa-4">
+                <MudText>Nothing needs your attention in the next 60 days.</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">Add events with required actions from a <MudLink Href="/programs">program</MudLink>.</MudText>
+            </MudPaper>
+        }
+        else
+        {
+            @foreach (var item in required)
+            {
+                <ActionItemCard @key="item.ActionId" Item="item" Now="now" OnChanged="LoadAsync" />
+            }
+        }
+    </section>
+
+    <MudGrid Spacing="3" Class="mt-2">
+        <MudItem xs="12" md="7">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="section-title">Upcoming events (60 days)</MudText>
+            <MudPaper Outlined="true">
+                @if (upcoming.Count == 0)
+                {
+                    <MudText Class="pa-4">No events in the next 60 days.</MudText>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        @foreach (var e in upcoming.Take(15))
+                        {
+                            <MudListItem T="string" Href="@($"/events/{e.Id}")">
+                                <div class="d-flex flex-wrap align-center gap-2">
+                                    <MudChip T="string" Size="Size.Small" Color="@Labels.CategoryColor(e.EventCategory)" Class="ma-0">@e.JurisdictionCode</MudChip>
+                                    <span><b>@e.ProgramName</b> · @Headline(e)</span>
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudPaper>
+
+            @if (missed.Count > 0)
+            {
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="section-title">Recently missed</MudText>
+                @foreach (var item in missed)
+                {
+                    <ActionItemCard @key="item.ActionId" Item="item" Now="now" OnChanged="LoadAsync" />
+                }
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="5">
+            <MudText Typo="Typo.h6" HtmlTag="h2" Class="section-title">Recently completed (30 days)</MudText>
+            <MudPaper Outlined="true">
+                @if (completed.Count == 0)
+                {
+                    <MudText Class="pa-4">Nothing completed recently.</MudText>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        @foreach (var item in completed.Take(10))
+                        {
+                            <MudListItem T="string" Href="@($"/events/{item.EventId}")">
+                                <div class="d-flex flex-wrap align-center gap-2">
+                                    <StatusChip Status="item.Status" />
+                                    <span>@item.SeasonYear · @item.JurisdictionCode @item.ProgramName · @item.Title@(item.Outcome is null ? "" : $" ({item.Outcome})")</span>
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudPaper>
+
+            @if (summary is not null)
+            {
+                <MudText Typo="Typo.h6" HtmlTag="h2" Class="section-title">Tracking</MudText>
+                <MudPaper Outlined="true" Class="pa-3">
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            <tr><td><MudLink Href="/jurisdictions">Jurisdictions</MudLink></td><td>@summary.Jurisdictions</td></tr>
+                            <tr><td><MudLink Href="/agencies">Agencies</MudLink></td><td>@summary.Agencies</td></tr>
+                            <tr><td><MudLink Href="/programs">Programs</MudLink></td><td>@summary.Programs</td></tr>
+                            <tr><td><MudLink Href="/calendar">Events in the next 60 days</MudLink></td><td>@summary.EventsNext60Days</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            }
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private bool loading = true;
+    private Instant now;
+    private List<ActionItemDto> required = [];
+    private List<ActionItemDto> missed = [];
+    private List<ActionItemDto> completed = [];
+    private IReadOnlyList<EventDto> upcoming = [];
+    private DashboardSummaryDto? summary;
+    private IReadOnlyList<string> warnings = [];
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        now = OwnerTime.Clock.GetCurrentInstant();
+        var items = await Services.RunAsync<ActionService, IReadOnlyList<ActionItemDto>>(s => s.ActionItemsAsync(60, false, CancellationToken.None));
+        required = items.Where(i => i.Status is EffectiveActionStatus.Open or EffectiveActionStatus.Upcoming).ToList();
+        missed = items.Where(i => i.Status == EffectiveActionStatus.Missed).ToList();
+        completed = (await Services.RunAsync<ActionService, IReadOnlyList<ActionItemDto>>(s => s.RecentlyResolvedAsync(30, CancellationToken.None))).ToList();
+        upcoming = await Services.RunAsync<ProgramEventService, IReadOnlyList<EventDto>>(s => s.UpcomingAsync(60, new EventFilter(), CancellationToken.None));
+        summary = await Services.RunAsync<DashboardService, DashboardSummaryDto>(s => s.SummaryAsync(CancellationToken.None));
+        warnings = (await SystemStatus.GetAsync(includeNtfy: false, CancellationToken.None)).Warnings;
+        loading = false;
+    }
+
+    private string Headline(EventDto e)
+    {
+        TimeFormats.TryParseInstant(e.StartsAtUtc, out var startsAt);
+        return TimeDisplay.Headline(e.EventTypeName, e.IsWindow, e.StartDate, e.EndDate, now, startsAt);
+    }
+}

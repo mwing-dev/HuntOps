@@ -1,0 +1,26 @@
+@if (Errors.Any)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-3" Dense="true">
+        <div>@Errors.General</div>
+        @foreach (var message in Errors.Unmapped(ShownFields))
+        {
+            <div>@message</div>
+        }
+        @if (Errors.IsConcurrencyConflict && OnReload.HasDelegate)
+        {
+            <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Class="mt-2" OnClick="OnReload">Reload latest</MudButton>
+        }
+    </MudAlert>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public FormErrors Errors { get; set; } = default!;
+
+    /// <summary>Fields displayed next to inputs; other field errors are listed here.</summary>
+    [Parameter]
+    public IEnumerable<string> ShownFields { get; set; } = [];
+
+    [Parameter]
+    public EventCallback OnReload { get; set; }
+}
