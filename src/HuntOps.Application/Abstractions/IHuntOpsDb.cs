@@ -3,6 +3,7 @@ using HuntOps.Domain.Actions;
 using HuntOps.Domain.Events;
 using HuntOps.Domain.Operations;
 using HuntOps.Domain.Reference;
+using HuntOps.Domain.Users;
 using Microsoft.EntityFrameworkCore;
 
 namespace HuntOps.Application.Abstractions;
@@ -29,6 +30,8 @@ public interface IHuntOpsDb
     DbSet<ApiKey> ApiKeys { get; }
 
     DbSet<WorkerHeartbeat> WorkerHeartbeats { get; }
+
+    DbSet<OwnerSettings> OwnerSettings { get; }
 
     /// <summary>
     /// Declares the version the client last read. Saving fails with a concurrency conflict if the row has changed since.

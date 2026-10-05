@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="HuntOps.IntegrationTests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\HuntOps.Infrastructure\HuntOps.Infrastructure.csproj" />
     <ProjectReference Include="..\HuntOps.Api\HuntOps.Api.csproj" />
     <ProjectReference Include="..\HuntOps.Mcp\HuntOps.Mcp.csproj" />
@@ -13,6 +17,7 @@
   <ItemGroup>
     <!-- Needed by `dotnet ef` when this project is used as the startup project. -->
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+    <PackageReference Include="MudBlazor" />
   </ItemGroup>
 
 </Project>

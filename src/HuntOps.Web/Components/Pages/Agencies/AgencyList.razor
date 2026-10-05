@@ -1,0 +1,87 @@
+@page "/agencies"
+@inject AppServices Services
+@inject IDialogService Dialogs
+@inject NavigationManager Navigation
+
+<PageTitle>Agencies · HuntOps</PageTitle>
+
+<div class="d-flex flex-wrap align-center gap-2 mb-3">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Agencies</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New agency</MudButton>
+</div>
+
+<div class="d-flex flex-wrap gap-3 mb-3">
+    <MudSelect T="Guid?" Value="jurisdictionId" ValueChanged="FilterAsync" Label="Jurisdiction" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="min-width: 220px">
+        @foreach (var j in jurisdictions)
+        {
+            <MudSelectItem T="Guid?" Value="@j.Id">@j.Name (@j.Code)</MudSelectItem>
+        }
+    </MudSelect>
+    <MudSwitch T="bool" Value="includeArchived" ValueChanged="ToggleArchivedAsync" Label="Show archived" Color="Color.Primary" />
+</div>
+
+<MudTable Items="items" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm" Loading="loading" T="AgencyDto">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Abbreviation</MudTh>
+        <MudTh>Jurisdiction</MudTh>
+        <MudTh>Website</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name"><MudLink Href="@($"/agencies/{context.Id}")">@context.Name</MudLink></MudTd>
+        <MudTd DataLabel="Abbreviation">@context.Abbreviation</MudTd>
+        <MudTd DataLabel="Jurisdiction">@context.JurisdictionCode</MudTd>
+        <MudTd DataLabel="Website">@if (context.WebsiteUrl is not null) { <MudLink Href="@context.WebsiteUrl" Target="_blank" rel="noopener noreferrer">Open</MudLink> }</MudTd>
+        <MudTd DataLabel="Status">@(context.IsArchived ? "Archived" : "Active")</MudTd>
+    </RowTemplate>
+    <NoRecordsContent><MudText>No agencies match.</MudText></NoRecordsContent>
+</MudTable>
+
+@code {
+    private IReadOnlyList<JurisdictionDto> jurisdictions = [];
+    private IReadOnlyList<AgencyDto> items = [];
+    private Guid? jurisdictionId;
+    private bool includeArchived;
+    private bool loading = true;
+
+    [SupplyParameterFromQuery(Name = "jurisdictionId")] public Guid? QueryJurisdictionId { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        jurisdictionId = QueryJurisdictionId;
+        jurisdictions = await Services.RunAsync<JurisdictionService, IReadOnlyList<JurisdictionDto>>(s => s.ListAsync(false, CancellationToken.None));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        items = await Services.RunAsync<AgencyService, IReadOnlyList<AgencyDto>>(s => s.ListAsync(jurisdictionId, includeArchived, CancellationToken.None));
+        loading = false;
+    }
+
+    private Task FilterAsync(Guid? value)
+    {
+        jurisdictionId = value;
+        return LoadAsync();
+    }
+
+    private Task ToggleArchivedAsync(bool value)
+    {
+        includeArchived = value;
+        return LoadAsync();
+    }
+
+    private async Task CreateAsync()
+    {
+        var defaultJurisdiction = jurisdictionId;
+        var created = await EntityDialogs.ShowAsync<AgencyDto>(Dialogs, "New agency",
+            ctx => @<AgencyForm DefaultJurisdictionId="defaultJurisdiction" OnSaved="@((AgencyDto a) => ctx.Saved(a))" OnCancel="@(() => ctx.Cancel())" />);
+        if (created is not null)
+        {
+            Navigation.NavigateTo($"/agencies/{created.Id}");
+        }
+    }
+}

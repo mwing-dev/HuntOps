@@ -12,7 +12,7 @@ internal sealed class HttpCurrentActor(IHttpContextAccessor accessor) : ICurrent
     public string ActorId =>
         User?.FindFirstValue(ApiClaims.KeyPrefix) is { } prefix ? $"apikey:{prefix}" : "anonymous";
 
-    public string UserId => User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? Owner.UserId;
+    public string UserId => User?.FindFirstValue(ClaimTypes.NameIdentifier) ?? Owner.PlaceholderUserId;
 
     public ChangeChannel Channel => ChangeChannel.Api;
 

@@ -21,6 +21,11 @@ if (ApiKeyCommand.IsRequested(args))
     return await ApiKeyCommand.RunAsync(args, Console.Out, Console.Error);
 }
 
+if (DevSeedCommand.IsRequested(args))
+{
+    return await DevSeedCommand.RunAsync(Console.Out, Console.Error);
+}
+
 var builder = WebApplication.CreateSlimBuilder(args);
 
 builder.AddHuntOpsLogging("huntops-worker");

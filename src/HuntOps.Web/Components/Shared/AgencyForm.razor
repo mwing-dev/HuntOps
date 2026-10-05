@@ -1,0 +1,91 @@
+@inject AppServices Services
+@inject UiErrors Ui
+
+<FormErrorSummary Errors="errors" ShownFields="@Shown" OnReload="ReloadAsync" />
+
+<MudGrid Spacing="2">
+    <MudItem xs="12">
+        <MudSelect T="Guid?" @bind-Value="jurisdictionId" Label="Jurisdiction" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                   Error="@errors.Has("jurisdictionId")" ErrorText="@errors.For("jurisdictionId")">
+            @foreach (var j in jurisdictions)
+            {
+                <MudSelectItem T="Guid?" Value="@j.Id">@j.Name (@j.Code)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="8">
+        <MudTextField @bind-Value="name" Label="Name" Placeholder="Kansas Department of Wildlife and Parks" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                      Error="@errors.Has("name")" ErrorText="@errors.For("name")" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudTextField @bind-Value="abbreviation" Label="Abbreviation" Placeholder="KDWP" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Error="@errors.Has("abbreviation")" ErrorText="@errors.For("abbreviation")" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="websiteUrl" Label="Website" Placeholder="https://" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Error="@errors.Has("websiteUrl")" ErrorText="@errors.For("websiteUrl")" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="notes" Label="Notes" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Error="@errors.Has("notes")" ErrorText="@errors.For("notes")" />
+    </MudItem>
+</MudGrid>
+
+<div class="d-flex justify-end gap-2 mt-4">
+    <MudButton OnClick="OnCancel">Cancel</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save</MudButton>
+</div>
+
+@code {
+    private static readonly string[] Shown = ["jurisdictionId", "name", "abbreviation", "websiteUrl", "notes"];
+    private readonly FormErrors errors = new();
+    private IReadOnlyList<JurisdictionDto> jurisdictions = [];
+    private bool saving;
+    private Guid? jurisdictionId;
+    private string? name, abbreviation, websiteUrl, notes;
+    private uint? version;
+
+    [Parameter] public AgencyDto? Existing { get; set; }
+    [Parameter] public Guid? DefaultJurisdictionId { get; set; }
+    [Parameter] public EventCallback<AgencyDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        jurisdictions = await Services.RunAsync<JurisdictionService, IReadOnlyList<JurisdictionDto>>(s => s.ListAsync(false, CancellationToken.None));
+        jurisdictionId = DefaultJurisdictionId;
+        Fill(Existing);
+    }
+
+    private void Fill(AgencyDto? a)
+    {
+        if (a is not null)
+        {
+            (jurisdictionId, name, abbreviation, websiteUrl, notes, version) = (a.JurisdictionId, a.Name, a.Abbreviation, a.WebsiteUrl, a.Notes, a.Version);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        AgencyDto? saved = null;
+        var input = new AgencyInput(jurisdictionId, name, abbreviation, websiteUrl, notes, version);
+        var ok = await Ui.TryAsync(async () => saved = Existing is null
+            ? await Services.RunAsync<AgencyService, AgencyDto>(s => s.CreateAsync(input, CancellationToken.None))
+            : await Services.RunAsync<AgencyService, AgencyDto>(s => s.UpdateAsync(Existing.Id, input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok && saved is not null)
+        {
+            await OnSaved.InvokeAsync(saved);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (Existing is not null)
+        {
+            Fill(await Services.RunAsync<AgencyService, AgencyDto>(s => s.GetAsync(Existing.Id, CancellationToken.None)));
+            errors.Clear();
+        }
+    }
+}

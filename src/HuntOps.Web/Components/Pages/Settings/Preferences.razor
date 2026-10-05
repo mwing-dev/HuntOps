@@ -1,0 +1,82 @@
+@page "/settings/preferences"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject ISnackbar Snackbar
+@inject OwnerTime OwnerTime
+
+<PageTitle>Preferences · HuntOps</PageTitle>
+
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-3">Preferences</MudText>
+
+@if (settings is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudPaper Outlined="true" Class="pa-4" Style="max-width: 640px">
+        <FormErrorSummary Errors="errors" ShownFields="@(["timeZoneId", "quietHoursStart", "quietHoursEnd"])" OnReload="LoadAsync" />
+
+        <MudText Typo="Typo.h6" HtmlTag="h2">Time zone</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">Dates and times are shown in this zone (alongside the event's own zone when they differ). Reminders use it from Phase 4.</MudText>
+        <TimeZoneField @bind-Value="timeZoneId" Label="Your time zone" Error="@errors.Has("timeZoneId")" ErrorText="@errors.For("timeZoneId")" />
+
+        <MudText Typo="Typo.h6" HtmlTag="h2" Class="mt-5">Quiet hours</MudText>
+        <MudText Typo="Typo.body2" Class="mb-2 mud-text-secondary">
+            Reminder notifications (coming in Phase 4) are held until quiet hours end. Nothing is sent yet; these settings are stored for when reminders arrive.
+        </MudText>
+        <MudSwitch T="bool" @bind-Value="quietEnabled" Label="Enable quiet hours" Color="Color.Primary" />
+        <div class="d-flex flex-wrap gap-3 mt-2">
+            <MudTimePicker @bind-Time="quietStart" Label="Quiet from" Disabled="!quietEnabled" AmPm="true" Editable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Error="@errors.Has("quietHoursStart")" ErrorText="@errors.For("quietHoursStart")" />
+            <MudTimePicker @bind-Time="quietEnd" Label="Quiet until" Disabled="!quietEnabled" AmPm="true" Editable="true" Variant="Variant.Outlined" Margin="Margin.Dense"
+                           Error="@errors.Has("quietHoursEnd")" ErrorText="@errors.For("quietHoursEnd")" />
+        </div>
+        <MudSwitch T="bool" @bind-Value="urgentBypass" Disabled="!quietEnabled" Color="Color.Primary" Class="mt-2"
+                   Label="Urgent (priority 5) reminders, such as 'deadline today', ignore quiet hours" />
+
+        <div class="d-flex justify-end mt-4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save preferences</MudButton>
+        </div>
+    </MudPaper>
+}
+
+@code {
+    private readonly FormErrors errors = new();
+    private OwnerSettingsDto? settings;
+    private string? timeZoneId;
+    private bool quietEnabled, urgentBypass, saving;
+    private TimeSpan? quietStart, quietEnd;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        settings = await Services.RunAsync<OwnerSettingsService, OwnerSettingsDto>(s => s.GetAsync(CancellationToken.None));
+        timeZoneId = settings.TimeZoneId;
+        quietEnabled = settings.QuietHoursEnabled;
+        urgentBypass = settings.UrgentBypassesQuietHours;
+        quietStart = ToTime(settings.QuietHoursStart);
+        quietEnd = ToTime(settings.QuietHoursEnd);
+        errors.Clear();
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        var input = new OwnerSettingsInput(timeZoneId, quietEnabled, FormatTime(quietStart), FormatTime(quietEnd), urgentBypass, settings!.IsSaved ? settings.Version : null);
+        var ok = await Ui.TryAsync(async () => settings = await Services.RunAsync<OwnerSettingsService, OwnerSettingsDto>(s => s.UpdateAsync(input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok)
+        {
+            OwnerTime.Invalidate();
+            Snackbar.Add("Preferences saved.", Severity.Success);
+        }
+    }
+
+    private static TimeSpan? ToTime(string? text) =>
+        TimeFormats.TryParseTime(text, out var time) ? time.ToTimeOnly().ToTimeSpan() : null;
+
+    private static string? FormatTime(TimeSpan? value) =>
+        value is { } t ? TimeFormats.Format(LocalTime.FromTimeOnly(TimeOnly.FromTimeSpan(t))) : null;
+}

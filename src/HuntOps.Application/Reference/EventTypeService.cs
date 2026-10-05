@@ -48,6 +48,13 @@ public sealed class EventTypeService(IHuntOpsDb db, IClock clock, IDateTimeZoneP
         return items.ConvertAll(EventTypeDto.From);
     }
 
+    /// <summary>Number of events (including archived ones) that use each event type key.</summary>
+    public async Task<IReadOnlyDictionary<string, int>> UsageAsync(CancellationToken cancellationToken) =>
+        await db.ProgramEvents
+            .GroupBy(e => e.EventTypeKey)
+            .Select(g => new { g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.Key, x => x.Count, cancellationToken);
+
     public async Task<EventTypeDto> GetAsync(string key, CancellationToken cancellationToken) =>
         EventTypeDto.From(await db.EventTypes.FindOrThrowAsync(key, Resource, cancellationToken));
 

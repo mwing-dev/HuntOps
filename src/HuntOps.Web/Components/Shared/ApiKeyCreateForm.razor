@@ -1,0 +1,66 @@
+@using HuntOps.Application.Access
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IJSRuntime JS
+
+@if (created is null)
+{
+    <FormErrorSummary Errors="errors" ShownFields="@(["name", "scope", "expiresInDays"])" />
+    <MudTextField @bind-Value="name" Label="Name" Placeholder="claude-desktop, phone, home-assistant" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                  Error="@errors.Has("name")" ErrorText="@errors.For("name")" />
+    <MudRadioGroup T="string" @bind-Value="scope" Class="mt-2">
+        <MudRadio T="string" Value="@("read")" Color="Color.Primary">Read — can view data only</MudRadio>
+        <MudRadio T="string" Value="@("write")" Color="Color.Primary">Write — can also create, change and complete</MudRadio>
+    </MudRadioGroup>
+    <MudNumericField T="int?" @bind-Value="expiresInDays" Label="Expires after (days, optional)" HideSpinButtons="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2"
+                     HelperText="Blank = never expires" Error="@errors.Has("expiresInDays")" ErrorText="@errors.For("expiresInDays")" />
+    <div class="d-flex justify-end gap-2 mt-4">
+        <MudButton OnClick="OnCancel">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="CreateAsync" Disabled="saving">Create key</MudButton>
+    </div>
+}
+else
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3">
+        <b>Copy this key now. HuntOps does not store the plaintext value and cannot show it again.</b>
+    </MudAlert>
+    <MudTextField T="string" Value="@created.Secret" Label="@($"API key: {created.Key.Name} ({string.Join(", ", created.Key.Scopes)})")" ReadOnly="true" Variant="Variant.Outlined"
+                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.ContentCopy" OnAdornmentClick="CopyAsync" AdornmentAriaLabel="Copy key" Class="api-key-secret" />
+    @if (copied)
+    {
+        <MudText Typo="Typo.caption" Color="Color.Success">Copied to clipboard.</MudText>
+    }
+    <MudText Typo="Typo.body2" Class="mt-2">Send it as <code>Authorization: Bearer &lt;key&gt;</code>. Public prefix: <code>@created.Key.Prefix</code></MudText>
+    <div class="d-flex justify-end mt-4">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="DoneAsync">I have copied the key</MudButton>
+    </div>
+}
+
+@code {
+    private readonly FormErrors errors = new();
+    private string? name;
+    private string scope = "read";
+    private int? expiresInDays;
+    private bool saving, copied;
+    private ApiKeyCreatedDto? created;
+
+    [Parameter] public EventCallback<ApiKeyDto> OnDone { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task CreateAsync()
+    {
+        saving = true;
+        var input = new ApiKeyCreateInput(name, scope, expiresInDays);
+        await Ui.TryAsync(async () => created = await Services.RunAsync<ApiKeyService, ApiKeyCreatedDto>(s => s.CreateAsync(input, CancellationToken.None)), errors);
+        saving = false;
+    }
+
+    private async Task CopyAsync() => copied = await JS.InvokeAsync<bool>("huntops.copyText", created!.Secret);
+
+    private async Task DoneAsync()
+    {
+        var key = created!.Key;
+        created = null; // drop the plaintext from component state as soon as the user is done
+        await OnDone.InvokeAsync(key);
+    }
+}

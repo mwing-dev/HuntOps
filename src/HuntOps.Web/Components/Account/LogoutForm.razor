@@ -1,0 +1,8 @@
+@* Posts to /account/logout with an antiforgery token (works from interactive components). *@
+<form action="account/logout" method="post" class="logout-form">
+    <AntiforgeryToken />
+    <input type="hidden" name="returnUrl" value="" />
+    <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Text" Color="Color.Inherit" StartIcon="@Icons.Material.Filled.Logout" Size="Size.Small">
+        Sign out
+    </MudButton>
+</form>

@@ -1,0 +1,249 @@
+@page "/events/new"
+@page "/events/{Id:guid}/edit"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject NavigationManager Navigation
+@inject OwnerTime OwnerTime
+
+<PageTitle>@(IsNew ? "New event" : "Edit event") · HuntOps</PageTitle>
+
+<MudText Typo="Typo.h4" HtmlTag="h1" Class="mb-3">@(IsNew ? "New event" : "Edit event")</MudText>
+
+@if (!ready)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <FormErrorSummary Errors="errors" ShownFields="@Shown" OnReload="ReloadAsync" />
+
+    <MudPaper Outlined="true" Class="pa-4">
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="6">
+                <MudSelect T="Guid?" Value="programId" ValueChanged="ProgramChanged" Label="Program" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                           Error="@errors.Has("programId")" ErrorText="@errors.For("programId")">
+                    @foreach (var p in programs)
+                    {
+                        <MudSelectItem T="Guid?" Value="@p.Id">@p.JurisdictionCode · @p.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudSelect T="string" Value="eventTypeKey" ValueChanged="EventTypeChanged" Label="Event type" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                           Error="@errors.Has("eventTypeKey")" ErrorText="@errors.For("eventTypeKey")">
+                    @foreach (var t in eventTypes)
+                    {
+                        <MudSelectItem T="string" Value="@t.Key">@t.DisplayName (@Labels.Category(t.Category))</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudNumericField T="int?" @bind-Value="seasonYear" Label="Season year" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true" HideSpinButtons="true"
+                                 Error="@errors.Has("seasonYear")" ErrorText="@errors.For("seasonYear")" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudTextField @bind-Value="seasonLabel" Label="Season label (optional)" Placeholder="2026-27" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Error="@errors.Has("seasonLabel")" ErrorText="@errors.For("seasonLabel")" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="qualifier" Label="Qualifier (optional)" Placeholder="Phase 2, Round 1" HelperText="Needed when a program has several events of the same type in one year"
+                              Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("qualifier")" ErrorText="@errors.For("qualifier")" />
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudRadioGroup T="bool" @bind-Value="isWindow">
+                    <MudRadio T="bool" Value="false" Color="Color.Primary">Single date (e.g. draw results June 25)</MudRadio>
+                    <MudRadio T="bool" Value="true" Color="Color.Primary">Date range (e.g. applications May 12 → June 12)</MudRadio>
+                </MudRadioGroup>
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudDatePicker @bind-Date="startDate" Label="@(isWindow ? "Opens" : "Date")" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="yyyy-MM-dd" Editable="true"
+                               Error="@errors.Has("startDate")" ErrorText="@errors.For("startDate")" />
+            </MudItem>
+            <MudItem xs="6" md="3">
+                <MudTimePicker @bind-Time="startTime" Label="Time (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" AmPm="true" Editable="true"
+                               HelperText="Blank = start of day" Error="@errors.Has("startTime")" ErrorText="@errors.For("startTime")" />
+            </MudItem>
+            @if (isWindow)
+            {
+                <MudItem xs="6" md="3">
+                    <MudDatePicker @bind-Date="endDate" Label="Closes" Variant="Variant.Outlined" Margin="Margin.Dense" DateFormat="yyyy-MM-dd" Editable="true"
+                                   Error="@errors.Has("endDate")" ErrorText="@errors.For("endDate")" />
+                </MudItem>
+                <MudItem xs="6" md="3">
+                    <MudTimePicker @bind-Time="endTime" Label="Closing time (optional)" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" AmPm="true" Editable="true"
+                                   HelperText="Blank = end of day (11:59 PM)" Error="@errors.Has("endTime")" ErrorText="@errors.For("endTime")" />
+                </MudItem>
+            }
+            <MudItem xs="12" md="6">
+                <TimeZoneField @bind-Value="timeZoneId" Label="Event time zone" Clearable="true" Placeholder="@JurisdictionZone"
+                               HelperText="@($"Blank = jurisdiction default ({JurisdictionZone ?? "n/a"}). Dates are interpreted in this zone.")"
+                               Error="@errors.Has("timeZoneId")" ErrorText="@errors.For("timeZoneId")" />
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudTextField @bind-Value="name" Label="Name (optional)" HelperText="Blank = generated from program, type and year" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Error="@errors.Has("name")" ErrorText="@errors.For("name")" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="sourceUrl" Label="Agency page (source URL)" Placeholder="https://" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Error="@errors.Has("sourceUrl")" ErrorText="@errors.For("sourceUrl")" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField @bind-Value="description" Label="Description" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Error="@errors.Has("description")" ErrorText="@errors.For("description")" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudCheckBox T="bool" @bind-Value="verified" Color="Color.Success"
+                             Label="I have verified these dates against the agency's official information" />
+                @if (existing?.VerificationStatus == VerificationStatus.Verified)
+                {
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Currently verified. If you change the dates, verification is cleared unless you tick this box.</MudText>
+                }
+            </MudItem>
+            @if (IsNew)
+            {
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="actionTitle" Label="Required action (optional)" Placeholder="@DefaultActionTitle" HelperText="What you must do for this event. You can add more actions later."
+                                  Variant="Variant.Outlined" Margin="Margin.Dense" Error="@errors.Has("actions[0].title")" ErrorText="@errors.For("actions[0].title")" />
+                </MudItem>
+            }
+        </MudGrid>
+
+        <div class="d-flex justify-end gap-2 mt-4">
+            <MudButton Href="@CancelHref">Cancel</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save event</MudButton>
+        </div>
+    </MudPaper>
+}
+
+@code {
+    private static readonly string[] Shown =
+        ["programId", "eventTypeKey", "seasonYear", "seasonLabel", "qualifier", "startDate", "startTime", "endDate", "endTime", "timeZoneId", "name", "sourceUrl", "description", "actions[0].title"];
+
+    private readonly FormErrors errors = new();
+    private bool ready, saving, isWindow = true, verified;
+    private IReadOnlyList<ProgramDto> programs = [];
+    private IReadOnlyList<EventTypeDto> eventTypes = [];
+    private Guid? programId;
+    private string? eventTypeKey, seasonLabel, qualifier, timeZoneId, name, sourceUrl, description, actionTitle;
+    private int? seasonYear;
+    private DateTime? startDate, endDate;
+    private TimeSpan? startTime, endTime;
+    private uint? version;
+    private EventDto? existing;
+    private Dictionary<Guid, string> jurisdictionZones = [];
+
+    [Parameter] public Guid? Id { get; set; }
+
+    [SupplyParameterFromQuery(Name = "programId")] public Guid? QueryProgramId { get; set; }
+
+    private bool IsNew => Id is null;
+
+    private string CancelHref => Id is { } id ? $"/events/{id}" : programId is { } p ? $"/programs/{p}" : "/programs";
+
+    private string? JurisdictionZone =>
+        programs.FirstOrDefault(p => p.Id == programId) is { } program && jurisdictionZones.TryGetValue(program.JurisdictionId, out var zone) ? zone : null;
+
+    private string? DefaultActionTitle => eventTypes.FirstOrDefault(t => t.Key == eventTypeKey)?.DefaultActionTitle;
+
+    protected override async Task OnInitializedAsync()
+    {
+        programs = await Services.RunAsync<ProgramService, IReadOnlyList<ProgramDto>>(s => s.ListAsync(new ProgramFilter(), CancellationToken.None));
+        eventTypes = await Services.RunAsync<EventTypeService, IReadOnlyList<EventTypeDto>>(s => s.ListAsync(false, CancellationToken.None));
+        var jurisdictions = await Services.RunAsync<JurisdictionService, IReadOnlyList<JurisdictionDto>>(s => s.ListAsync(true, CancellationToken.None));
+        jurisdictionZones = jurisdictions.ToDictionary(j => j.Id, j => j.TimeZoneId);
+
+        if (Id is { } id)
+        {
+            Fill(await Services.RunAsync<ProgramEventService, EventDto>(s => s.GetAsync(id, CancellationToken.None)));
+        }
+        else
+        {
+            programId = QueryProgramId;
+            seasonYear = (await OwnerTime.TodayAsync()).Year;
+            eventTypeKey = "application-period";
+        }
+
+        ready = true;
+    }
+
+    private void Fill(EventDto e)
+    {
+        existing = e;
+        (programId, eventTypeKey, seasonYear, seasonLabel, qualifier) = (e.ProgramId, e.EventTypeKey, e.SeasonYear, e.SeasonLabel, e.Qualifier);
+        (timeZoneId, name, sourceUrl, description, version) = (e.TimeZoneId, e.Name, e.SourceUrl, e.Description, e.Version);
+        isWindow = e.IsWindow;
+        // Re-confirm explicitly: unchanged dates keep their verification; changed dates lose it unless re-confirmed.
+        verified = false;
+        startDate = ToDate(e.StartDate);
+        endDate = ToDate(e.EndDate);
+        startTime = ToTime(e.StartTime);
+        endTime = ToTime(e.EndTime);
+
+        // Programs list excludes archived ones; keep the current program selectable.
+        if (programs.All(p => p.Id != e.ProgramId))
+        {
+            programs = [.. programs, new ProgramDto(e.ProgramId, e.AgencyId, e.AgencyName, e.JurisdictionId, e.JurisdictionCode, null, e.ProgramName, "", null, null, null, null, null, null, new Dictionary<string, string>(), null, null, true, null, "", "", 0)];
+        }
+
+        if (eventTypes.All(t => t.Key != e.EventTypeKey))
+        {
+            eventTypes = [.. eventTypes, new EventTypeDto(e.EventTypeKey, e.EventTypeName, null, e.EventCategory, e.IsWindow, null, false, true, 0)];
+        }
+    }
+
+    private void ProgramChanged(Guid? value) => programId = value;
+
+    private void EventTypeChanged(string? value)
+    {
+        eventTypeKey = value;
+        if (IsNew && eventTypes.FirstOrDefault(t => t.Key == value) is { } type)
+        {
+            isWindow = type.IsWindowByDefault;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        EventDto? saved = null;
+        var actions = IsNew && !string.IsNullOrWhiteSpace(actionTitle) ? new List<ActionInput> { new(actionTitle) } : null;
+        var input = new EventInput(
+            programId, eventTypeKey, seasonYear,
+            FormatDate(startDate), FormatTime(startTime),
+            isWindow ? FormatDate(endDate) : null, isWindow ? FormatTime(endTime) : null,
+            timeZoneId, qualifier, seasonLabel, name,
+            description, sourceUrl, null, verified ? true : null,
+            actions, version);
+
+        var ok = await Ui.TryAsync(async () => saved = Id is { } id
+            ? await Services.RunAsync<ProgramEventService, EventDto>(s => s.UpdateAsync(id, input, CancellationToken.None))
+            : await Services.RunAsync<ProgramEventService, EventDto>(s => s.CreateAsync(input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok && saved is not null)
+        {
+            Navigation.NavigateTo($"/events/{saved.Id}");
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (Id is { } id)
+        {
+            Fill(await Services.RunAsync<ProgramEventService, EventDto>(s => s.GetAsync(id, CancellationToken.None)));
+            errors.Clear();
+        }
+    }
+
+    private static DateTime? ToDate(string? iso) =>
+        TimeFormats.TryParseDate(iso, out var date) ? date.ToDateTimeUnspecified() : null;
+
+    private static TimeSpan? ToTime(string? iso) =>
+        TimeFormats.TryParseTime(iso, out var time) ? time.ToTimeOnly().ToTimeSpan() : null;
+
+    private static string? FormatDate(DateTime? value) =>
+        value is { } d ? TimeFormats.Format(LocalDate.FromDateTime(d)) : null;
+
+    private static string? FormatTime(TimeSpan? value) =>
+        value is { } t ? TimeFormats.Format(LocalTime.FromTimeOnly(TimeOnly.FromTimeSpan(t))) : null;
+}

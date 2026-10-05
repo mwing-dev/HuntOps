@@ -1,0 +1,72 @@
+@inject AppServices Services
+@inject UiErrors Ui
+
+<FormErrorSummary Errors="errors" ShownFields="@(["key", "displayName", "category", "description", "defaultActionTitle"])" OnReload="ReloadAsync" />
+
+<MudTextField @bind-Value="key" Label="Key" Placeholder="hunter-ed-deadline" Disabled="Existing is not null" Variant="Variant.Outlined" Margin="Margin.Dense"
+              HelperText="@(Existing is null ? "Lowercase words joined by hyphens. Permanent: events reference it." : "Keys are permanent so existing events keep their meaning.")"
+              Error="@errors.Has("key")" ErrorText="@errors.For("key")" />
+<MudTextField @bind-Value="displayName" Label="Display name" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2" Required="true"
+              Error="@errors.Has("displayName")" ErrorText="@errors.For("displayName")" />
+<MudSelect T="EventCategory" @bind-Value="category" Label="Category" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2">
+    @foreach (var c in Enum.GetValues<EventCategory>())
+    {
+        <MudSelectItem T="EventCategory" Value="c">@Labels.Category(c)</MudSelectItem>
+    }
+</MudSelect>
+<MudCheckBox T="bool" @bind-Value="isWindow" Label="Usually a date range (window)" Color="Color.Primary" />
+<MudTextField @bind-Value="defaultActionTitle" Label="Suggested action (optional)" Placeholder="Submit application" Variant="Variant.Outlined" Margin="Margin.Dense"
+              Error="@errors.Has("defaultActionTitle")" ErrorText="@errors.For("defaultActionTitle")" />
+<MudTextField @bind-Value="description" Label="Description" Lines="2" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mt-2"
+              Error="@errors.Has("description")" ErrorText="@errors.For("description")" />
+
+<div class="d-flex justify-end gap-2 mt-4">
+    <MudButton OnClick="OnCancel">Cancel</MudButton>
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save</MudButton>
+</div>
+
+@code {
+    private readonly FormErrors errors = new();
+    private bool saving, isWindow;
+    private string? key, displayName, description, defaultActionTitle;
+    private EventCategory category = EventCategory.Other;
+    private uint? version;
+
+    [Parameter] public EventTypeDto? Existing { get; set; }
+    [Parameter] public EventCallback<EventTypeDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override void OnInitialized() => Fill(Existing);
+
+    private void Fill(EventTypeDto? t)
+    {
+        if (t is not null)
+        {
+            (key, displayName, description, defaultActionTitle, category, isWindow, version) = (t.Key, t.DisplayName, t.Description, t.DefaultActionTitle, t.Category, t.IsWindowByDefault, t.Version);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        EventTypeDto? saved = null;
+        var input = new EventTypeInput(key, displayName, category.ToString(), description, isWindow, defaultActionTitle, version);
+        var ok = await Ui.TryAsync(async () => saved = Existing is null
+            ? await Services.RunAsync<EventTypeService, EventTypeDto>(s => s.CreateAsync(input, CancellationToken.None))
+            : await Services.RunAsync<EventTypeService, EventTypeDto>(s => s.UpdateAsync(Existing.Key, input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok && saved is not null)
+        {
+            await OnSaved.InvokeAsync(saved);
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        if (Existing is not null)
+        {
+            Fill(await Services.RunAsync<EventTypeService, EventTypeDto>(s => s.GetAsync(Existing.Key, CancellationToken.None)));
+            errors.Clear();
+        }
+    }
+}

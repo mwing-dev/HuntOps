@@ -1,0 +1,116 @@
+@page "/jurisdictions/{Id:guid}"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<PageTitle>@(jurisdiction?.Name ?? "Jurisdiction") · HuntOps</PageTitle>
+
+@if (jurisdiction is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudBreadcrumbs Items="@([new BreadcrumbItem("Jurisdictions", "/jurisdictions"), new BreadcrumbItem(jurisdiction.Name, null, disabled: true)])" Class="px-0" />
+    <div class="d-flex flex-wrap align-center gap-2 mb-2">
+        <MudText Typo="Typo.h4" HtmlTag="h1">@jurisdiction.Name (@jurisdiction.Code)</MudText>
+        @if (jurisdiction.IsArchived)
+        {
+            <MudChip T="string" Color="Color.Default">Archived</MudChip>
+        }
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Edit" OnClick="EditAsync">Edit</MudButton>
+        @if (jurisdiction.IsArchived)
+        {
+            <MudButton Variant="Variant.Outlined" OnClick="RestoreAsync">Restore</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Error" OnClick="ArchiveAsync">Archive</MudButton>
+        }
+    </div>
+
+    <MudPaper Outlined="true" Class="pa-3 mb-4">
+        <MudSimpleTable Dense="true" Elevation="0">
+            <tbody>
+                <tr><td>Country</td><td>@jurisdiction.Country</td></tr>
+                <tr><td>Default event time zone</td><td>@jurisdiction.TimeZoneId</td></tr>
+                <tr><td>Website</td><td>@if (jurisdiction.WebsiteUrl is not null) { <MudLink Href="@jurisdiction.WebsiteUrl" Target="_blank" rel="noopener noreferrer">@jurisdiction.WebsiteUrl</MudLink> }</td></tr>
+                <tr><td>Notes</td><td style="white-space: pre-wrap">@jurisdiction.Notes</td></tr>
+            </tbody>
+        </MudSimpleTable>
+    </MudPaper>
+
+    <div class="d-flex align-center mb-2">
+        <MudText Typo="Typo.h6" HtmlTag="h2">Agencies</MudText>
+        <MudSpacer />
+        @if (!jurisdiction.IsArchived)
+        {
+            <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.Add" OnClick="AddAgencyAsync">Add agency</MudButton>
+        }
+    </div>
+    <MudTable Items="agencies" Dense="true" Breakpoint="Breakpoint.Sm" T="AgencyDto">
+        <HeaderContent><MudTh>Name</MudTh><MudTh>Abbreviation</MudTh><MudTh>Status</MudTh></HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name"><MudLink Href="@($"/agencies/{context.Id}")">@context.Name</MudLink></MudTd>
+            <MudTd DataLabel="Abbreviation">@context.Abbreviation</MudTd>
+            <MudTd DataLabel="Status">@(context.IsArchived ? "Archived" : "Active")</MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText>No agencies yet.</MudText></NoRecordsContent>
+    </MudTable>
+}
+
+@code {
+    private JurisdictionDto? jurisdiction;
+    private IReadOnlyList<AgencyDto> agencies = [];
+
+    [Parameter] public Guid Id { get; set; }
+
+    protected override Task OnParametersSetAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        jurisdiction = await Services.RunAsync<JurisdictionService, JurisdictionDto>(s => s.GetAsync(Id, CancellationToken.None));
+        agencies = await Services.RunAsync<AgencyService, IReadOnlyList<AgencyDto>>(s => s.ListAsync(Id, true, CancellationToken.None));
+    }
+
+    private async Task EditAsync()
+    {
+        var current = jurisdiction;
+        var saved = await EntityDialogs.ShowAsync<JurisdictionDto>(Dialogs, "Edit jurisdiction",
+            ctx => @<JurisdictionForm Existing="current" OnSaved="@((JurisdictionDto j) => ctx.Saved(j))" OnCancel="@(() => ctx.Cancel())" />);
+        if (saved is not null)
+        {
+            jurisdiction = saved;
+        }
+    }
+
+    private async Task ArchiveAsync()
+    {
+        if (await Dialogs.ConfirmAsync("Archive jurisdiction?", $"{jurisdiction!.Name} will be hidden from active lists. Its history is kept and it can be restored. Archive its agencies first.", "Archive")
+            && await Ui.TryAsync(async () => jurisdiction = await Services.RunAsync<JurisdictionService, JurisdictionDto>(s => s.ArchiveAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Jurisdiction archived.", Severity.Success);
+        }
+    }
+
+    private async Task RestoreAsync()
+    {
+        if (await Ui.TryAsync(async () => jurisdiction = await Services.RunAsync<JurisdictionService, JurisdictionDto>(s => s.RestoreAsync(Id, CancellationToken.None)), Snackbar))
+        {
+            Snackbar.Add("Jurisdiction restored.", Severity.Success);
+        }
+    }
+
+    private async Task AddAgencyAsync()
+    {
+        var created = await EntityDialogs.ShowAsync<AgencyDto>(Dialogs, "New agency",
+            ctx => @<AgencyForm DefaultJurisdictionId="Id" OnSaved="@((AgencyDto a) => ctx.Saved(a))" OnCancel="@(() => ctx.Cancel())" />);
+        if (created is not null)
+        {
+            Navigation.NavigateTo($"/agencies/{created.Id}");
+        }
+    }
+}

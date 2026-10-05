@@ -1,0 +1,36 @@
+@* Generic host dialog: renders a form component and closes with its saved result. *@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Title</MudText>
+    </TitleContent>
+    <DialogContent>
+        @ChildContent((Saved, Cancel))
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string Title { get; set; } = "";
+
+    /// <summary>Form content; call the provided callbacks when saved or cancelled.</summary>
+    [Parameter] public RenderFragment<(Action<object> Saved, Action Cancel)> ChildContent { get; set; } = default!;
+
+    private void Saved(object result) => MudDialog.Close(DialogResult.Ok(result));
+
+    private void Cancel() => MudDialog.Cancel();
+
+    /// <summary>Shows a form in a dialog and returns its saved result (or default when cancelled).</summary>
+    public static async Task<T?> ShowAsync<T>(IDialogService dialogs, string title, RenderFragment<(Action<object> Saved, Action Cancel)> content, MaxWidth maxWidth = MaxWidth.Small)
+        where T : class
+    {
+        var parameters = new DialogParameters<EntityDialogs>
+        {
+            { d => d.Title, title },
+            { d => d.ChildContent, content },
+        };
+        var dialog = await dialogs.ShowAsync<EntityDialogs>(title, parameters, new DialogOptions { MaxWidth = maxWidth, FullWidth = true });
+        var result = await dialog.Result;
+        return result is { Canceled: false, Data: T value } ? value : null;
+    }
+}

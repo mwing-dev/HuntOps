@@ -19,8 +19,10 @@ RUN dotnet restore src/HuntOps.Web/HuntOps.Web.csproj \
  && dotnet restore src/HuntOps.Worker/HuntOps.Worker.csproj
 
 COPY src/ src/
-RUN dotnet publish src/HuntOps.Web/HuntOps.Web.csproj       -c Release -o /out/web    --no-restore \
- && dotnet publish src/HuntOps.Worker/HuntOps.Worker.csproj -c Release -o /out/worker --no-restore
+# Publish restores again (fast, from the cache above): the SDK only adds the Blazor framework assets package
+# (blazor.web.js) when .razor files are present at restore time, which they are not in the csproj-only layer.
+RUN dotnet publish src/HuntOps.Web/HuntOps.Web.csproj       -c Release -o /out/web \
+ && dotnet publish src/HuntOps.Worker/HuntOps.Worker.csproj -c Release -o /out/worker
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime-base
 ENV DOTNET_NOLOGO=1 \

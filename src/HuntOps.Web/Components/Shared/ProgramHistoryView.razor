@@ -1,0 +1,47 @@
+@* Season-by-season history of a program: events and what happened with their actions. *@
+@if (Seasons.Count == 0)
+{
+    <MudText Class="pa-3">No events recorded for this program yet.</MudText>
+}
+else
+{
+    <div class="program-history">
+        @foreach (var season in Seasons)
+        {
+            <MudPaper Outlined="true" Class="pa-3 mb-2 history-season" data-season="@season.SeasonYear">
+                <MudText Typo="Typo.h6" HtmlTag="h3">@season.SeasonYear</MudText>
+                @foreach (var entry in season.Events)
+                {
+                    var e = entry.Event;
+                    <div class="mt-1">
+                        <MudLink Href="@($"/events/{e.Id}")"><b>@e.EventTypeName</b>@(e.Qualifier.Length > 0 ? $" ({e.Qualifier})" : "")</MudLink>
+                        <span class="mud-text-secondary"> · @Dates(e)</span>
+                        @if (entry.InheritedFromProgramId is not null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">from umbrella program</MudChip>
+                        }
+                        @if (e.Actions.Count == 0)
+                        {
+                            <div class="ml-4"><MudText Typo="Typo.body2" Class="mud-text-secondary">@Labels.Phase(e.Phase)</MudText></div>
+                        }
+                        @foreach (var action in e.Actions)
+                        {
+                            <div class="ml-4 d-flex flex-wrap align-center gap-2">
+                                <StatusChip Status="action.Status" />
+                                <MudText Typo="Typo.body2">@action.Title@(action.Outcome is null ? "" : $": {action.Outcome}")</MudText>
+                            </div>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<ProgramSeasonDto> Seasons { get; set; } = [];
+
+    private static string Dates(EventDto e) =>
+        e.IsWindow ? $"{TimeDisplay.Date(e.StartDate)} → {TimeDisplay.Date(e.EndDate)}" : TimeDisplay.Date(e.StartDate) ?? e.StartDate;
+}

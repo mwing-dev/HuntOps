@@ -20,7 +20,7 @@ public sealed class SystemActor : ICurrentActor
 {
     public string ActorId => "system";
 
-    public string UserId => Owner.UserId;
+    public string UserId => Owner.PlaceholderUserId;
 
     public ChangeChannel Channel => ChangeChannel.System;
 }

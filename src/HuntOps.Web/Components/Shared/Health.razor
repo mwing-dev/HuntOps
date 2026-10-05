@@ -1,0 +1,5 @@
+<MudIcon Icon="@(Ok ? Icons.Material.Filled.CheckCircle : Icons.Material.Filled.Error)" Color="@(Ok ? Color.Success : Color.Error)" Size="Size.Small" Style="vertical-align: middle" />
+
+@code {
+    [Parameter] public bool Ok { get; set; }
+}

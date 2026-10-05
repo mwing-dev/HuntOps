@@ -34,7 +34,9 @@ public static class ApiSetup
         services.ConfigureHttpJsonOptions(options =>
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase)));
 
-        services.AddAuthentication(ApiKeyAuthenticationHandler.SchemeName)
+        // No default scheme here: the web host makes the Identity cookie the default for the dashboard, and API
+        // policies name the API-key scheme explicitly, so cookies never authorize /api calls.
+        services.AddAuthentication()
             .AddScheme<AuthenticationSchemeOptions, ApiKeyAuthenticationHandler>(ApiKeyAuthenticationHandler.SchemeName, null);
         services.AddAuthorizationBuilder()
             .AddPolicy(ApiPolicies.Read, policy => policy

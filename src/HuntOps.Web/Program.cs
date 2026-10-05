@@ -4,6 +4,7 @@ using HuntOps.Infrastructure.Health;
 using HuntOps.Infrastructure.Hosting;
 using HuntOps.Infrastructure.Logging;
 using HuntOps.Web.Components;
+using HuntOps.Web.Security;
 using Serilog;
 
 if (ContainerHealthProbe.IsRequested(args))
@@ -17,6 +18,7 @@ builder.AddHuntOpsLogging("huntops-web");
 builder.Services.AddHuntOpsInfrastructure();
 builder.Services.AddHuntOpsDataProtection();
 builder.Services.AddHuntOpsApi();
+builder.Services.AddHuntOpsDashboard(builder.Configuration);
 builder.Services.AddHealthChecks().AddHuntOpsReadinessChecks();
 
 builder.Services.AddRazorComponents()
@@ -24,8 +26,10 @@ builder.Services.AddRazorComponents()
 
 var app = builder.Build();
 
+app.UseHuntOpsForwardedHeaders();
+
 // Outermost, so it records the final status code after exception handling (a handled 409 is logged as 409).
-// Logs method, path, status and timing only; headers (including Authorization) are never logged.
+// Logs method, path, status and timing only; headers, cookies and form bodies are never logged.
 app.UseSerilogRequestLogging();
 
 // /api gets JSON problem details for errors and status codes; the dashboard keeps its HTML pages.
@@ -39,12 +43,12 @@ app.UseWhen(context => !ApiSetup.IsApiRequest(context), dashboard =>
     if (!app.Environment.IsDevelopment())
     {
         dashboard.UseExceptionHandler("/Error", createScopeForErrors: true);
+        dashboard.UseHsts();
     }
 
     dashboard.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true);
 });
 
-// TLS terminates at the reverse proxy; forwarded headers and HSTS arrive with dashboard authentication in Phase 3.
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseAntiforgery();
@@ -52,6 +56,7 @@ app.UseAntiforgery();
 app.MapHuntOpsHealthEndpoints();
 app.MapHuntOpsApiDocs();
 app.MapHuntOpsApi();
+app.MapAccountEndpoints();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();

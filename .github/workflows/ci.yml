@@ -47,6 +47,10 @@ jobs:
           docker compose up -d --build --wait --wait-timeout 180
           curl -fsS http://127.0.0.1:8080/health/ready
           curl -fsS http://127.0.0.1:8081/v1/health
+          # The dashboard is interactive only if the Blazor framework script is published.
+          curl -fsS -o /dev/null http://127.0.0.1:8080/_framework/blazor.web.js
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)" = "302"
+          curl -fsS -o /dev/null http://127.0.0.1:8080/account/login
 
       - name: API smoke test (auth, OpenAPI)
         run: |

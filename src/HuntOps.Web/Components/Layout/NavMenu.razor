@@ -1,0 +1,16 @@
+<MudNavMenu Class="mt-2">
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+    <MudNavLink Href="/calendar" Icon="@Icons.Material.Filled.CalendarMonth">Calendar</MudNavLink>
+    <MudNavLink Href="/programs" Icon="@Icons.Material.Filled.Flag">Programs</MudNavLink>
+    <MudNavLink Href="/jurisdictions" Icon="@Icons.Material.Filled.Map">Jurisdictions</MudNavLink>
+    <MudNavLink Href="/agencies" Icon="@Icons.Material.Filled.AccountBalance">Agencies</MudNavLink>
+    <MudTooltip Text="Monitoring agency web pages arrives in a later phase." Placement="Placement.Right">
+        <MudNavLink Disabled="true" Icon="@Icons.Material.Filled.TravelExplore">Sources (coming later)</MudNavLink>
+    </MudTooltip>
+    <MudNavGroup Title="Settings" Icon="@Icons.Material.Filled.Settings" Expanded="true">
+        <MudNavLink Href="/settings/preferences" Icon="@Icons.Material.Filled.Tune">Preferences</MudNavLink>
+        <MudNavLink Href="/settings/api-keys" Icon="@Icons.Material.Filled.Key">API keys</MudNavLink>
+        <MudNavLink Href="/settings/event-types" Icon="@Icons.Material.Filled.Category">Event types</MudNavLink>
+    </MudNavGroup>
+    <MudNavLink Href="/system" Icon="@Icons.Material.Filled.MonitorHeart">System</MudNavLink>
+</MudNavMenu>

@@ -1,0 +1,106 @@
+@page "/settings/event-types"
+@inject AppServices Services
+@inject UiErrors Ui
+@inject IDialogService Dialogs
+@inject ISnackbar Snackbar
+
+<PageTitle>Event types · HuntOps</PageTitle>
+
+<div class="d-flex flex-wrap align-center gap-2 mb-2">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Event types</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New event type</MudButton>
+</div>
+<MudText Typo="Typo.body2" Class="mb-3 mud-text-secondary">
+    The vocabulary used for events. Types are never deleted: archiving one keeps it on existing events but hides it when creating new ones.
+</MudText>
+
+<MudTable Items="types" Dense="true" Breakpoint="Breakpoint.Sm" Loading="loading" T="EventTypeDto">
+    <HeaderContent>
+        <MudTh>Name</MudTh>
+        <MudTh>Key</MudTh>
+        <MudTh>Category</MudTh>
+        <MudTh>Shape</MudTh>
+        <MudTh>Suggested action</MudTh>
+        <MudTh>Used by</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Name">@context.DisplayName @if (context.IsSystem) { <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">built-in</MudChip> }</MudTd>
+        <MudTd DataLabel="Key"><code>@context.Key</code></MudTd>
+        <MudTd DataLabel="Category">@Labels.Category(context.Category)</MudTd>
+        <MudTd DataLabel="Shape">@(context.IsWindowByDefault ? "Date range" : "Single date")</MudTd>
+        <MudTd DataLabel="Suggested action">@context.DefaultActionTitle</MudTd>
+        <MudTd DataLabel="Used by">@Usage(context.Key) event(s)</MudTd>
+        <MudTd DataLabel="Status">@(context.IsArchived ? "Archived" : "Active")</MudTd>
+        <MudTd>
+            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => EditAsync(context)">Edit</MudButton>
+            @if (context.IsArchived)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="() => RestoreAsync(context)">Restore</MudButton>
+            }
+            else
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Error" OnClick="() => ArchiveAsync(context)">Archive</MudButton>
+            }
+        </MudTd>
+    </RowTemplate>
+</MudTable>
+
+@code {
+    private IReadOnlyList<EventTypeDto> types = [];
+    private IReadOnlyDictionary<string, int> usage = new Dictionary<string, int>();
+    private bool loading = true;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        types = await Services.RunAsync<EventTypeService, IReadOnlyList<EventTypeDto>>(s => s.ListAsync(true, CancellationToken.None));
+        usage = await Services.RunAsync<EventTypeService, IReadOnlyDictionary<string, int>>(s => s.UsageAsync(CancellationToken.None));
+        loading = false;
+    }
+
+    private int Usage(string key) => usage.TryGetValue(key, out var count) ? count : 0;
+
+    private async Task CreateAsync()
+    {
+        if (await EntityDialogs.ShowAsync<EventTypeDto>(Dialogs, "New event type",
+                ctx => @<EventTypeForm OnSaved="@((EventTypeDto t) => ctx.Saved(t))" OnCancel="@(() => ctx.Cancel())" />) is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task EditAsync(EventTypeDto type)
+    {
+        if (await EntityDialogs.ShowAsync<EventTypeDto>(Dialogs, "Edit event type",
+                ctx => @<EventTypeForm Existing="type" OnSaved="@((EventTypeDto t) => ctx.Saved(t))" OnCancel="@(() => ctx.Cancel())" />) is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task ArchiveAsync(EventTypeDto type)
+    {
+        var used = Usage(type.Key);
+        var message = used > 0
+            ? $"{used} event(s) use '{type.DisplayName}'. They keep it; it will no longer be offered for new events. You can restore it later."
+            : $"'{type.DisplayName}' will no longer be offered for new events. You can restore it later.";
+        if (await Dialogs.ConfirmAsync("Archive event type?", message, "Archive")
+            && await Ui.TryAsync(() => Services.RunAsync<EventTypeService, EventTypeDto>(s => s.ArchiveAsync(type.Key, CancellationToken.None)), Snackbar))
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task RestoreAsync(EventTypeDto type)
+    {
+        if (await Ui.TryAsync(() => Services.RunAsync<EventTypeService, EventTypeDto>(s => s.RestoreAsync(type.Key, CancellationToken.None)), Snackbar))
+        {
+            await LoadAsync();
+        }
+    }
+}

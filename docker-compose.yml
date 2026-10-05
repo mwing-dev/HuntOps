@@ -46,6 +46,10 @@ services:
     restart: "no"
     environment:
       <<: *dotnet-env
+      # Owner bootstrap (only used when no owner exists; never overwrites an existing password).
+      HUNTOPS_ADMIN_EMAIL: ${HUNTOPS_ADMIN_EMAIL:-}
+      HUNTOPS_ADMIN_PASSWORD: ${HUNTOPS_ADMIN_PASSWORD:-}
+      HUNTOPS_OWNER_TIMEZONE: ${HUNTOPS_OWNER_TIMEZONE:-America/Los_Angeles}
     depends_on:
       huntops-postgres:
         condition: service_healthy
@@ -59,6 +63,12 @@ services:
     restart: unless-stopped
     environment:
       <<: *dotnet-env
+      HUNTOPS_OWNER_TIMEZONE: ${HUNTOPS_OWNER_TIMEZONE:-America/Los_Angeles}
+      HUNTOPS_TRUST_FORWARDED_HEADERS: ${HUNTOPS_TRUST_FORWARDED_HEADERS:-false}
+      HUNTOPS_COOKIE_SECURE: ${HUNTOPS_COOKIE_SECURE:-auto}
+      HUNTOPS_GIT_COMMIT: ${HUNTOPS_GIT_COMMIT:-}
+      # Internal ntfy URL; Phase 3 only checks connectivity for the System page.
+      NTFY_BASE_URL: ${NTFY_BASE_URL:-http://huntops-ntfy}
     ports:
       - "${HUNTOPS_BIND_ADDRESS:-127.0.0.1}:${HUNTOPS_WEB_PORT:-8080}:8080"
     depends_on:

@@ -1,0 +1,113 @@
+@page "/programs"
+@inject AppServices Services
+@inject IDialogService Dialogs
+@inject NavigationManager Navigation
+
+<PageTitle>Programs · HuntOps</PageTitle>
+
+<div class="d-flex flex-wrap align-center gap-2 mb-3">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Programs</MudText>
+    <MudSpacer />
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="CreateAsync">New program</MudButton>
+</div>
+
+<MudGrid Spacing="2" Class="mb-2">
+    <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="Guid?" Value="jurisdictionId" ValueChanged="JurisdictionChangedAsync" Label="Jurisdiction" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var j in jurisdictions)
+            {
+                <MudSelectItem T="Guid?" Value="@j.Id">@j.Name (@j.Code)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="Guid?" Value="agencyId" ValueChanged="AgencyChangedAsync" Label="Agency" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var a in agencies.Where(a => jurisdictionId is null || a.JurisdictionId == jurisdictionId))
+            {
+                <MudSelectItem T="Guid?" Value="@a.Id">@a.JurisdictionCode · @a.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="2">
+        <MudTextField T="string" Value="species" ValueChanged="SpeciesChangedAsync" Label="Species" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DebounceInterval="300" />
+    </MudItem>
+    <MudItem xs="6" md="2">
+        <MudTextField T="string" Value="search" ValueChanged="SearchChangedAsync" Label="Search" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true" DebounceInterval="300" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+    </MudItem>
+    <MudItem xs="12" md="2" Class="d-flex align-center">
+        <MudSwitch T="bool" Value="includeArchived" ValueChanged="ArchivedChangedAsync" Label="Archived" Color="Color.Primary" />
+    </MudItem>
+</MudGrid>
+
+<MudTable Items="items" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm" Loading="loading" T="ProgramDto">
+    <HeaderContent>
+        <MudTh>Program</MudTh>
+        <MudTh>Jurisdiction</MudTh>
+        <MudTh>Agency</MudTh>
+        <MudTh>Species</MudTh>
+        <MudTh>Residency</MudTh>
+        <MudTh>Status</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Program"><MudLink Href="@($"/programs/{context.Id}")">@context.Name</MudLink></MudTd>
+        <MudTd DataLabel="Jurisdiction">@context.JurisdictionCode</MudTd>
+        <MudTd DataLabel="Agency">@context.AgencyName</MudTd>
+        <MudTd DataLabel="Species">@context.Species</MudTd>
+        <MudTd DataLabel="Residency">@context.Residency</MudTd>
+        <MudTd DataLabel="Status">@(context.IsArchived ? "Archived" : "Active")</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>
+        <MudText>No programs match. Programs describe what a deadline relates to, e.g. "Resident Antelope" or "Elk Limited Draw".</MudText>
+    </NoRecordsContent>
+</MudTable>
+
+@code {
+    private IReadOnlyList<JurisdictionDto> jurisdictions = [];
+    private IReadOnlyList<AgencyDto> agencies = [];
+    private IReadOnlyList<ProgramDto> items = [];
+    private Guid? jurisdictionId, agencyId;
+    private string? species, search;
+    private bool includeArchived;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        jurisdictions = await Services.RunAsync<JurisdictionService, IReadOnlyList<JurisdictionDto>>(s => s.ListAsync(false, CancellationToken.None));
+        agencies = await Services.RunAsync<AgencyService, IReadOnlyList<AgencyDto>>(s => s.ListAsync(null, false, CancellationToken.None));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        var filter = new ProgramFilter(jurisdictionId, agencyId, species, search, includeArchived);
+        items = await Services.RunAsync<ProgramService, IReadOnlyList<ProgramDto>>(s => s.ListAsync(filter, CancellationToken.None));
+        loading = false;
+    }
+
+    private Task JurisdictionChangedAsync(Guid? value)
+    {
+        jurisdictionId = value;
+        agencyId = null;
+        return LoadAsync();
+    }
+
+    private Task AgencyChangedAsync(Guid? value) { agencyId = value; return LoadAsync(); }
+
+    private Task SpeciesChangedAsync(string? value) { species = value; return LoadAsync(); }
+
+    private Task SearchChangedAsync(string? value) { search = value; return LoadAsync(); }
+
+    private Task ArchivedChangedAsync(bool value) { includeArchived = value; return LoadAsync(); }
+
+    private async Task CreateAsync()
+    {
+        var defaultAgency = agencyId;
+        var created = await EntityDialogs.ShowAsync<ProgramDto>(Dialogs, "New program",
+            ctx => @<ProgramForm DefaultAgencyId="defaultAgency" OnSaved="@((ProgramDto p) => ctx.Saved(p))" OnCancel="@(() => ctx.Cancel())" />, MaxWidth.Medium);
+        if (created is not null)
+        {
+            Navigation.NavigateTo($"/programs/{created.Id}");
+        }
+    }
+}

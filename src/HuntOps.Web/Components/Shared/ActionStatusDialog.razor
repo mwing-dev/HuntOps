@@ -1,0 +1,42 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Title</MudText>
+    </TitleContent>
+    <DialogContent>
+        <ActionStatusForm ActionId="ActionId" ActionTitle="@ActionTitle" Mode="Mode" OnSaved="Saved" OnCancel="Cancel" />
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public Guid ActionId { get; set; }
+    [Parameter] public string ActionTitle { get; set; } = "";
+    [Parameter] public ActionResolution Mode { get; set; } = ActionResolution.Completed;
+
+    private string Title => Mode switch
+    {
+        ActionResolution.Completed => "Mark completed",
+        ActionResolution.NotApplicable => "Not applicable",
+        ActionResolution.Cancelled => "Cancel action",
+        _ => "Reopen action",
+    };
+
+    private void Saved(ActionDto action) => MudDialog.Close(DialogResult.Ok(action));
+
+    private void Cancel() => MudDialog.Cancel();
+
+    /// <summary>Opens the dialog and returns the updated action, or null if cancelled.</summary>
+    public static async Task<ActionDto?> ShowAsync(IDialogService dialogs, Guid actionId, string actionTitle, ActionResolution mode)
+    {
+        var parameters = new DialogParameters<ActionStatusDialog>
+        {
+            { d => d.ActionId, actionId },
+            { d => d.ActionTitle, actionTitle },
+            { d => d.Mode, mode },
+        };
+        var dialog = await dialogs.ShowAsync<ActionStatusDialog>(null, parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        return result is { Canceled: false, Data: ActionDto action } ? action : null;
+    }
+}

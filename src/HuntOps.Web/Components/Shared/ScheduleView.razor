@@ -1,0 +1,50 @@
+@* Shows an event's schedule as the agency publishes it, plus the owner's local times when the zone differs. *@
+@if (Display is not null)
+{
+    <div class="schedule-view">
+        <MudText Typo="Typo.subtitle1">
+            <MudIcon Icon="@(Display.IsWindow ? Icons.Material.Filled.DateRange : Icons.Material.Filled.Event)" Size="Size.Small" Class="mr-1" Style="vertical-align: middle" />
+            @(Display.IsWindow ? "Window: " : "Single date: ")@Display.Dates
+        </MudText>
+        <MudSimpleTable Dense="true" Elevation="0" Class="mt-1">
+            @if (ShowOwnerColumn)
+            {
+                <thead>
+                    <tr><th></th><th>Event time (@Display.TimeZoneId)</th><th>Your time</th></tr>
+                </thead>
+            }
+            <tbody>
+                <tr>
+                    <td><b>@(Display.IsWindow ? "Opens" : "When")</b></td>
+                    <td>@Display.Starts.EventLocal</td>
+                    @if (ShowOwnerColumn)
+                    {
+                        <td>@(Display.Starts.OwnerLocal ?? "same")</td>
+                    }
+                </tr>
+                @if (Display.Ends is { } ends)
+                {
+                    <tr>
+                        <td><b>Closes</b></td>
+                        <td>@ends.EventLocal</td>
+                        @if (ShowOwnerColumn)
+                        {
+                            <td>@(ends.OwnerLocal ?? "same")</td>
+                        }
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+        @if (!ShowOwnerColumn)
+        {
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">Time zone: @Display.TimeZoneId (same as yours)</MudText>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public ScheduleDisplay? Display { get; set; }
+
+    private bool ShowOwnerColumn => Display is not null && (Display.Starts.OwnerLocal is not null || Display.Ends?.OwnerLocal is not null);
+}

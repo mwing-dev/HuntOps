@@ -17,6 +17,8 @@ public sealed class InputValidator(IDateTimeZoneProvider zones)
 
     public bool IsValid => _errors.Count == 0;
 
+    public bool HasError(string field) => _errors.ContainsKey(field);
+
     public void Add(string field, string message)
     {
         if (!_errors.TryGetValue(field, out var list))

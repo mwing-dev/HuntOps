@@ -1,0 +1,184 @@
+@page "/calendar"
+@inject AppServices Services
+@inject OwnerTime OwnerTime
+
+<PageTitle>Calendar · HuntOps</PageTitle>
+
+<div class="d-flex flex-wrap align-center gap-2 mb-3">
+    <MudText Typo="Typo.h4" HtmlTag="h1">Calendar</MudText>
+    <MudSpacer />
+    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+        <MudButton Color="@(agenda ? Color.Default : Color.Primary)" OnClick="() => agenda = false">Month</MudButton>
+        <MudButton Color="@(agenda ? Color.Primary : Color.Default)" OnClick="() => agenda = true">Agenda</MudButton>
+    </MudButtonGroup>
+</div>
+
+<MudGrid Spacing="2" Class="mb-2">
+    <MudItem xs="6" md="2">
+        <MudSelect T="Guid?" Value="jurisdictionId" ValueChanged="@(v => SetAsync(() => { jurisdictionId = v; agencyId = null; programId = null; }))" Label="Jurisdiction" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var j in jurisdictions)
+            {
+                <MudSelectItem T="Guid?" Value="@j.Id">@j.Code</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="2">
+        <MudSelect T="Guid?" Value="agencyId" ValueChanged="@(v => SetAsync(() => { agencyId = v; programId = null; }))" Label="Agency" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var a in agencies.Where(a => jurisdictionId is null || a.JurisdictionId == jurisdictionId))
+            {
+                <MudSelectItem T="Guid?" Value="@a.Id">@(a.Abbreviation ?? a.Name)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="2">
+        <MudTextField T="string" Value="species" ValueChanged="@(v => SetAsync(() => species = v))" Label="Species" Clearable="true" DebounceInterval="300" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="6" md="2">
+        <MudSelect T="Guid?" Value="programId" ValueChanged="@(v => SetAsync(() => programId = v))" Label="Program" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var p in programs.Where(p => (jurisdictionId is null || p.JurisdictionId == jurisdictionId) && (agencyId is null || p.AgencyId == agencyId)))
+            {
+                <MudSelectItem T="Guid?" Value="@p.Id">@p.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="6" md="2">
+        <MudSelect T="string" Value="eventType" ValueChanged="@(v => SetAsync(() => eventType = v))" Label="Event type" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+            @foreach (var t in eventTypes)
+            {
+                <MudSelectItem T="string" Value="@t.Key">@t.DisplayName</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="3" md="1">
+        <MudNumericField T="int?" Value="seasonYear" ValueChanged="@(v => SetAsync(() => seasonYear = v))" Label="Year" Clearable="true" HideSpinButtons="true" Variant="Variant.Outlined" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="3" md="1">
+        <MudSelect T="string" Value="status" ValueChanged="@(v => SetAsync(() => status = v ?? "all"))" Label="Actions" Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem T="string" Value="@("all")">All</MudSelectItem>
+            <MudSelectItem T="string" Value="@("incomplete")">Incomplete</MudSelectItem>
+            <MudSelectItem T="string" Value="@("completed")">Completed</MudSelectItem>
+        </MudSelect>
+    </MudItem>
+</MudGrid>
+
+<div class="d-flex align-center gap-2 mb-2">
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft" aria-label="Previous month" OnClick="() => MoveAsync(-1)" />
+    <MudText Typo="Typo.h6" Style="min-width: 160px; text-align: center">@MonthLabel</MudText>
+    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" aria-label="Next month" OnClick="() => MoveAsync(1)" />
+    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="TodayAsync">Today</MudButton>
+    <MudSpacer />
+    <div class="d-none d-sm-flex flex-wrap gap-1">
+        @foreach (var category in Enum.GetValues<EventCategory>())
+        {
+            <span class="calendar-entry @Labels.CategoryCss(category)" style="display: inline-block">@Labels.Category(category)</span>
+        }
+    </div>
+</div>
+
+@if (loading)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (agenda)
+{
+    @if (filtered.Count == 0)
+    {
+        <MudPaper Outlined="true"><MudText Class="pa-4">No events this month with these filters.</MudText></MudPaper>
+    }
+    else
+    {
+        <MudPaper Outlined="true">
+            <MudList T="string" Dense="true">
+                @foreach (var e in filtered.OrderBy(e => e.StartsAtUtc, StringComparer.Ordinal))
+                {
+                    <MudListItem T="string" Href="@($"/events/{e.Id}")">
+                        <div class="d-flex flex-wrap align-center gap-2">
+                            <span class="calendar-entry @Labels.CategoryCss(e.EventCategory)" style="display: inline-block">@Labels.Category(e.EventCategory)</span>
+                            <b>@e.JurisdictionCode @e.ProgramName</b>
+                            <span>@e.EventTypeName</span>
+                            <span class="mud-text-secondary">@(e.IsWindow ? $"{TimeDisplay.Date(e.StartDate)} → {TimeDisplay.Date(e.EndDate)}" : TimeDisplay.Date(e.StartDate))</span>
+                            @foreach (var action in e.Actions)
+                            {
+                                <StatusChip Status="action.Status" />
+                            }
+                        </div>
+                    </MudListItem>
+                }
+            </MudList>
+        </MudPaper>
+    }
+}
+else
+{
+    <MudPaper Outlined="true" Class="pa-1">
+        <MonthCalendar Month="month" Events="filtered" Today="today" />
+    </MudPaper>
+}
+
+@code {
+    private bool loading = true, agenda;
+    private LocalDate month, today;
+    private IReadOnlyList<JurisdictionDto> jurisdictions = [];
+    private IReadOnlyList<AgencyDto> agencies = [];
+    private IReadOnlyList<ProgramDto> programs = [];
+    private IReadOnlyList<EventTypeDto> eventTypes = [];
+    private List<EventDto> filtered = [];
+    private Guid? jurisdictionId, agencyId, programId;
+    private string? species, eventType;
+    private int? seasonYear;
+    private string status = "all";
+
+    private string MonthLabel => $"{System.Globalization.CultureInfo.InvariantCulture.DateTimeFormat.GetMonthName(month.Month)} {month.Year}";
+
+    protected override async Task OnInitializedAsync()
+    {
+        today = await OwnerTime.TodayAsync();
+        month = new LocalDate(today.Year, today.Month, 1);
+        jurisdictions = await Services.RunAsync<JurisdictionService, IReadOnlyList<JurisdictionDto>>(s => s.ListAsync(false, CancellationToken.None));
+        agencies = await Services.RunAsync<AgencyService, IReadOnlyList<AgencyDto>>(s => s.ListAsync(null, false, CancellationToken.None));
+        programs = await Services.RunAsync<ProgramService, IReadOnlyList<ProgramDto>>(s => s.ListAsync(new ProgramFilter(), CancellationToken.None));
+        eventTypes = await Services.RunAsync<EventTypeService, IReadOnlyList<EventTypeDto>>(s => s.ListAsync(true, CancellationToken.None));
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        var first = month.PlusDays(-7);
+        var last = month.PlusMonths(1).PlusDays(7);
+        var filter = new EventFilter(programId, agencyId, jurisdictionId, species, seasonYear, eventType,
+            TimeFormats.Format(first), TimeFormats.Format(last), Take: Paging.MaxTake);
+        var page = await Services.RunAsync<ProgramEventService, PagedResult<EventDto>>(s => s.ListAsync(filter, CancellationToken.None));
+        filtered = page.Items.Where(MatchesStatus).ToList();
+        loading = false;
+    }
+
+    private bool MatchesStatus(EventDto e)
+    {
+        var actions = e.Actions.Where(a => !a.IsArchived).ToList();
+        return status switch
+        {
+            "incomplete" => actions.Any(a => !ActionStatusResolver.IsResolved(a.Status)),
+            "completed" => actions.Count > 0 && actions.All(a => ActionStatusResolver.IsResolved(a.Status)),
+            _ => true,
+        };
+    }
+
+    private Task SetAsync(Action change)
+    {
+        change();
+        return LoadAsync();
+    }
+
+    private Task MoveAsync(int months)
+    {
+        month = month.PlusMonths(months);
+        return LoadAsync();
+    }
+
+    private Task TodayAsync()
+    {
+        month = new LocalDate(today.Year, today.Month, 1);
+        return LoadAsync();
+    }
+}

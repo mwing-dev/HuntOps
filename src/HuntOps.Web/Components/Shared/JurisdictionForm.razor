@@ -1,0 +1,90 @@
+@inject AppServices Services
+@inject UiErrors Ui
+
+<FormErrorSummary Errors="errors" ShownFields="@Shown" OnReload="ReloadAsync" />
+
+<MudGrid Spacing="2">
+    <MudItem xs="12" sm="8">
+        <MudTextField @bind-Value="name" Label="Name" Placeholder="Kansas" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                      Error="@errors.Has("name")" ErrorText="@errors.For("name")" />
+    </MudItem>
+    <MudItem xs="6" sm="4">
+        <MudTextField @bind-Value="code" Label="Code" Placeholder="KS" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                      Error="@errors.Has("code")" ErrorText="@errors.For("code")" />
+    </MudItem>
+    <MudItem xs="6" sm="4">
+        <MudTextField @bind-Value="country" Label="Country" Placeholder="US" Variant="Variant.Outlined" Margin="Margin.Dense" Required="true"
+                      Error="@errors.Has("country")" ErrorText="@errors.For("country")" />
+    </MudItem>
+    <MudItem xs="12" sm="8">
+        <TimeZoneField @bind-Value="timeZoneId" Label="Default time zone for events" Error="@errors.Has("timeZoneId")" ErrorText="@errors.For("timeZoneId")" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="websiteUrl" Label="Website" Placeholder="https://" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Error="@errors.Has("websiteUrl")" ErrorText="@errors.For("websiteUrl")" />
+    </MudItem>
+    <MudItem xs="12">
+        <MudTextField @bind-Value="notes" Label="Notes" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Error="@errors.Has("notes")" ErrorText="@errors.For("notes")" />
+    </MudItem>
+</MudGrid>
+
+<div class="d-flex justify-end gap-2 mt-4">
+    @if (OnCancel.HasDelegate)
+    {
+        <MudButton OnClick="OnCancel">Cancel</MudButton>
+    }
+    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAsync" Disabled="saving">Save</MudButton>
+</div>
+
+@code {
+    private static readonly string[] Shown = ["name", "code", "country", "timeZoneId", "websiteUrl", "notes"];
+    private readonly FormErrors errors = new();
+    private bool saving;
+    private string? name, code, country = "US", timeZoneId, websiteUrl, notes;
+    private uint? version;
+
+    /// <summary>The jurisdiction being edited, or null to create one.</summary>
+    [Parameter] public JurisdictionDto? Existing { get; set; }
+    [Parameter] public EventCallback<JurisdictionDto> OnSaved { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    protected override void OnInitialized() => Fill(Existing);
+
+    private void Fill(JurisdictionDto? j)
+    {
+        if (j is null)
+        {
+            return;
+        }
+
+        (name, code, country, timeZoneId, websiteUrl, notes, version) = (j.Name, j.Code, j.Country, j.TimeZoneId, j.WebsiteUrl, j.Notes, j.Version);
+    }
+
+    private async Task SaveAsync()
+    {
+        saving = true;
+        JurisdictionDto? saved = null;
+        var input = new JurisdictionInput(name, code, country, timeZoneId, websiteUrl, notes, version);
+        var ok = await Ui.TryAsync(async () => saved = Existing is null
+            ? await Services.RunAsync<JurisdictionService, JurisdictionDto>(s => s.CreateAsync(input, CancellationToken.None))
+            : await Services.RunAsync<JurisdictionService, JurisdictionDto>(s => s.UpdateAsync(Existing.Id, input, CancellationToken.None)), errors);
+        saving = false;
+        if (ok && saved is not null)
+        {
+            await OnSaved.InvokeAsync(saved);
+        }
+    }
+
+    /// <summary>After a concurrency conflict: load the latest version and show it (the user re-applies their change).</summary>
+    private async Task ReloadAsync()
+    {
+        if (Existing is null)
+        {
+            return;
+        }
+
+        Fill(await Services.RunAsync<JurisdictionService, JurisdictionDto>(s => s.GetAsync(Existing.Id, CancellationToken.None)));
+        errors.Clear();
+    }
+}

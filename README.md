@@ -12,8 +12,8 @@ The approved design lives in **[docs/design/v1-architecture.md](docs/design/v1-a
 |---|---|---|
 | 1 | Solution scaffold, Docker Compose, PostgreSQL, migrations, health checks, logging, CI | ✅ Done |
 | 2 | Domain model + EF Core + REST API + API keys | ✅ Done |
-| 3 | Blazor dashboard + authentication | ⏳ Next |
-| 4 | Reminder rules, worker scheduling, ntfy | — |
+| 3 | Dashboard, owner sign-in, settings, API-key management | ✅ Done |
+| 4 | Reminder rules, worker scheduling, ntfy | ⏳ Next |
 | 5 | Action completion + notification history | — |
 | 6 | CSV/JSON/ICS imports + review queue | — |
 | 7 | Exact-URL sources, text extraction, change detection | — |
@@ -29,10 +29,16 @@ What runs today:
   - events, with timezone-aware point-in-time and window semantics
   - required actions, with append-only status history
 - a REST API (`/api`) with OpenAPI and Swagger UI, protected by hashed API keys with read/write scopes
-- `apikey` CLI commands for managing keys
+- a **responsive dashboard** (MudBlazor; desktop and phone):
+  - **Action required** shows what needs doing, with one-click *Mark completed* / *Not applicable* / *Reopen* and visible history
+  - upcoming events, and recently completed or missed actions
+  - pages for jurisdictions, agencies, programs (with season-by-season history), events and actions, plus a calendar and agenda view
+  - event types, preferences (time zone, quiet hours), API keys, and system health
+- owner sign-in (ASP.NET Core Identity), with a single owner bootstrapped from `.env`
+- `apikey` and `dev-seed` CLI commands
 - liveness and readiness endpoints, the worker heartbeat, Data Protection keys in PostgreSQL, and structured JSON logging
 
-The dashboard (Phase 3), reminders (Phase 4) and later features are not built yet.
+Reminders (Phase 4) and later features are not built yet. The **Sources** menu item is shown disabled until Phase 7.
 
 ## Architecture (summary)
 
@@ -68,11 +74,11 @@ tests/
 
 ```bash
 cp .env.example .env
-# edit .env: set POSTGRES_PASSWORD (required), e.g. `openssl rand -base64 32`
+# edit .env: set POSTGRES_PASSWORD, HUNTOPS_ADMIN_EMAIL and HUNTOPS_ADMIN_PASSWORD (see "Owner account" below)
 docker compose up -d --build --wait
 ```
 
-- Dashboard: <http://127.0.0.1:8080>
+- Dashboard: <http://127.0.0.1:8080> (sign in with the owner account)
 - Health: <http://127.0.0.1:8080/health> (liveness) · <http://127.0.0.1:8080/health/ready> (readiness)
 - ntfy: <http://127.0.0.1:8081>
 
@@ -97,8 +103,56 @@ Published ports bind to `127.0.0.1` by default, so put a reverse proxy in front 
 | `NTFY_AUTH_DEFAULT_ACCESS` | `deny-all` | ntfy default ACL |
 | `NTFY_IMAGE_TAG` | `v2.28.0` | Pinned ntfy image tag |
 | `HUNTOPS_SWAGGER_ENABLED` | `true` | Serve `/openapi/v1.json` and Swagger UI at `/swagger`. The document is public; calling the API always needs a key. |
+| `HUNTOPS_ADMIN_EMAIL` / `HUNTOPS_ADMIN_PASSWORD` | *(empty)* | Create the owner account **once**, only when no owner exists. Password: 12+ characters with upper, lower, digit and symbol. Never overwrites an existing account. |
+| `HUNTOPS_OWNER_TIMEZONE` | `America/Los_Angeles` | Initial owner time zone; afterwards edit it under Settings → Preferences |
+| `HUNTOPS_COOKIE_SECURE` | `auto` | `auto`: cookies are Secure whenever the request is HTTPS (directly or via a trusted proxy), so `http://127.0.0.1` works locally. `always`: HTTPS required. |
+| `HUNTOPS_TRUST_FORWARDED_HEADERS` | `false` | Trust `X-Forwarded-For/Proto/Host` from your reverse proxy |
+| `HUNTOPS_GIT_COMMIT` | *(empty)* | Optional build identifier shown on the System page |
+| `NTFY_BASE_URL` | `http://huntops-ntfy` | Internal ntfy URL. Phase 3 only uses it for the System page's connectivity check. |
 
 `.env.example` also lists the variables for later phases, commented out. The full reference is §9.1 of the architecture doc. **Never commit `.env`.**
+
+## Owner account & dashboard
+
+HuntOps V1 has a single **owner** account (ASP.NET Core Identity). Registration does not exist.
+
+**Bootstrap.** On every `docker compose up`, the one-shot `huntops-migrate` container applies migrations and then runs the owner bootstrap:
+
+| Situation | What happens |
+|---|---|
+| No users exist, and `HUNTOPS_ADMIN_EMAIL` / `HUNTOPS_ADMIN_PASSWORD` are set | The owner is created. The password must meet the policy; otherwise the migrate container exits with code 1 and a message describing the rule, never the value. |
+| No users exist, and the variables are not set | Nothing is created. **HuntOps never creates default credentials.** The login page explains what to set. |
+| An owner already exists | The variables are ignored and never change the password. You can remove `HUNTOPS_ADMIN_PASSWORD` from `.env`. |
+
+**Sign-in security:**
+- Lockout after 5 failed attempts, for 15 minutes.
+- Antiforgery tokens on the login and logout forms.
+- The auth cookie is `HttpOnly` and `SameSite=Lax`, and Secure per `HUNTOPS_COOKIE_SECURE`. It slides over 14 days, or lasts only for the browser session unless "keep me signed in" is ticked.
+- Open sessions are re-validated every 30 minutes.
+- Data Protection keys live in PostgreSQL, so restarts keep you signed in.
+- The browser session never authorizes `/api`; the API always needs an API key.
+
+**Behind a TLS reverse proxy (production):** set `HUNTOPS_TRUST_FORWARDED_HEADERS=true` and `HUNTOPS_COOKIE_SECURE=always`. The proxy must pass WebSockets through, because the dashboard is Blazor Server.
+
+**Placeholder owner migration (Phase 2 → 3).** Phase 2 stored action history and API keys under the placeholder user id `"owner"`. The first bootstrap that has an owner re-assigns those rows, in one transaction:
+- `api_keys.user_id` and `action_status_changes.user_id` change from `owner` to the owner's Identity id.
+- Nothing else changes. History rows keep their id, sequence, status, outcome, note, time, channel and `changed_by`.
+- The append-only trigger permits exactly this one update. Any other `UPDATE`, `DELETE` or `TRUNCATE` of history is still rejected.
+
+The step is idempotent, and it also adopts keys created with the CLI before an owner existed.
+
+### Development data
+
+```bash
+docker compose exec huntops-worker dotnet HuntOps.Worker.dll dev-seed
+```
+
+This creates sample data through the application services:
+- Kansas · KDWP · Resident Antelope, with 2023–2024 "Applied – not drawn" and 2025–2026 "Preference point purchased"
+- an upcoming 2027 application and a 2027 draw-results date
+- a currently open deer-permit window, so the dashboard has something to act on
+
+It is idempotent, **development data only**, and never runs automatically. It is not part of any migration.
 
 ## REST API
 
@@ -109,7 +163,11 @@ The API lives under `/api`.
 
 ### API keys
 
-Keys look like `hops_<8-char id>_<secret>`. Only a SHA-256 hash is stored, and the plaintext is shown once, at creation. Until the dashboard can manage keys (Phase 3), use the worker CLI:
+Keys look like `hops_<8-char id>_<secret>`. Only a SHA-256 hash is stored, and the plaintext is shown once, at creation.
+
+**Dashboard:** go to **Settings → API keys** to create (read or write, optional expiry) or revoke keys.
+
+**CLI:** for recovery or admin use, the same operations are available from the worker:
 
 ```bash
 docker compose exec huntops-worker dotnet HuntOps.Worker.dll apikey create --name claude-code --scope write
@@ -217,6 +275,7 @@ Migrations live in `src/HuntOps.Infrastructure/Persistence/Migrations` and use t
 |---|---|---|
 | `InitialCreate` | 1 | `worker_heartbeats`, `data_protection_keys` |
 | `DomainModelAndApiKeys` | 2 | Reference data, event types (seeded), events, actions, `action_status_changes`, `api_keys`. Includes check constraints, filtered unique indexes, and an append-only trigger that rejects `UPDATE`, `DELETE` and `TRUNCATE` on action history. |
+| `IdentityAndOwnerSettings` | 3 | Identity tables (`users`, `roles`, `user_*`, `role_claims`), a single-owner index, and `owner_settings`. It also narrows the history trigger to allow the one-time placeholder-owner adoption. |
 
 **Create a migration** (no database connection needed):
 
@@ -265,6 +324,11 @@ dotnet test --solution HuntOps.slnx
 ```
 
 Tests use xUnit v3 on Microsoft.Testing.Platform, enabled in `global.json`. Integration tests start a disposable PostgreSQL container, so Docker must be running.
+
+They cover:
+- the REST API and authentication, sign-in, lockout and antiforgery, through `WebApplicationFactory` over HTTPS
+- the owner bootstrap and placeholder migration
+- dashboard components via [bUnit](https://bunit.dev): rendered against the real services and database, asserting behavior (text, saved data) rather than MudBlazor markup
 
 ## Backup and restore (preview)
 
