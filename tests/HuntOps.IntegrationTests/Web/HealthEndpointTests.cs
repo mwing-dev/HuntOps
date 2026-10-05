@@ -41,7 +41,7 @@ public sealed class HealthEndpointTests(PostgresFixture postgres)
     [Fact]
     public async Task Liveness_does_not_depend_on_database_and_readiness_reports_outage_without_details()
     {
-        await using var factory = new WebFactory("Host=127.0.0.1;Port=1;Database=none;Username=x;Password=hunter2;Timeout=1");
+        await using var factory = new WebFactory(TestSecrets.UnreachableDatabase(out var password));
         using var client = factory.CreateClient();
 
         var (liveStatus, _) = await GetAsync(client, "/health");
@@ -50,7 +50,7 @@ public sealed class HealthEndpointTests(PostgresFixture postgres)
 
         Assert.Equal(HttpStatusCode.OK, liveStatus);
         Assert.Equal(HttpStatusCode.ServiceUnavailable, readyResponse.StatusCode);
-        Assert.DoesNotContain("hunter2", readyText, StringComparison.Ordinal);
+        Assert.DoesNotContain(password, readyText, StringComparison.Ordinal);
         Assert.DoesNotContain("Exception", readyText, StringComparison.Ordinal);
     }
 

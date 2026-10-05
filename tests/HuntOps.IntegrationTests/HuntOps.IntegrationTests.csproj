@@ -8,6 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\HuntOps.Web\HuntOps.Web.csproj" />
     <ProjectReference Include="..\..\src\HuntOps.Infrastructure\HuntOps.Infrastructure.csproj" />
+    <!-- Aliased: the worker's top-level Program would otherwise clash with the web host's. -->
+    <ProjectReference Include="..\..\src\HuntOps.Worker\HuntOps.Worker.csproj" Aliases="worker" />
   </ItemGroup>
 
   <ItemGroup>

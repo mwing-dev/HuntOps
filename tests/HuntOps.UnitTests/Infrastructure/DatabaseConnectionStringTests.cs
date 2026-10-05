@@ -14,23 +14,31 @@ public sealed class DatabaseConnectionStringTests
     [Fact]
     public void Explicit_connection_string_takes_precedence_over_postgres_variables()
     {
+        var explicitConnectionString = new NpgsqlConnectionStringBuilder
+        {
+            Host = "db.internal",
+            Database = "explicit",
+            Username = "u",
+            Password = TestSecrets.NewPassword(),
+        }.ConnectionString;
         var config = Config(
-            ("ConnectionStrings:HuntOps", "Host=db.internal;Database=explicit;Username=u;Password=p"),
-            ("POSTGRES_PASSWORD", "ignored"),
+            ("ConnectionStrings:HuntOps", explicitConnectionString),
+            ("POSTGRES_PASSWORD", TestSecrets.NewPassword()),
             ("POSTGRES_HOST", "ignored-host"));
 
-        Assert.Equal("Host=db.internal;Database=explicit;Username=u;Password=p", DatabaseConnectionString.Resolve(config));
+        Assert.Equal(explicitConnectionString, DatabaseConnectionString.Resolve(config));
     }
 
     [Fact]
     public void Builds_from_postgres_variables_used_by_the_compose_stack()
     {
+        var password = TestSecrets.NewPassword();
         var config = Config(
             ("POSTGRES_HOST", "huntops-postgres"),
             ("POSTGRES_PORT", "5433"),
             ("POSTGRES_DB", "huntops_prod"),
             ("POSTGRES_USER", "hunter"),
-            ("POSTGRES_PASSWORD", "s3cret"));
+            ("POSTGRES_PASSWORD", password));
 
         var parsed = new NpgsqlConnectionStringBuilder(DatabaseConnectionString.Resolve(config));
 
@@ -38,14 +46,14 @@ public sealed class DatabaseConnectionStringTests
         Assert.Equal(5433, parsed.Port);
         Assert.Equal("huntops_prod", parsed.Database);
         Assert.Equal("hunter", parsed.Username);
-        Assert.Equal("s3cret", parsed.Password);
+        Assert.Equal(password, parsed.Password);
         Assert.Equal(GssEncryptionMode.Disable, parsed.GssEncryptionMode);
     }
 
     [Fact]
     public void Uses_defaults_when_only_password_is_set()
     {
-        var parsed = new NpgsqlConnectionStringBuilder(DatabaseConnectionString.Resolve(Config(("POSTGRES_PASSWORD", "pw"))));
+        var parsed = new NpgsqlConnectionStringBuilder(DatabaseConnectionString.Resolve(Config(("POSTGRES_PASSWORD", TestSecrets.NewPassword()))));
 
         Assert.Equal("localhost", parsed.Host);
         Assert.Equal(5432, parsed.Port);
@@ -57,7 +65,7 @@ public sealed class DatabaseConnectionStringTests
     public void Blank_optional_variables_fall_back_to_defaults()
     {
         var parsed = new NpgsqlConnectionStringBuilder(DatabaseConnectionString.Resolve(
-            Config(("POSTGRES_PASSWORD", "pw"), ("POSTGRES_HOST", "  "), ("POSTGRES_DB", ""), ("POSTGRES_PORT", ""))));
+            Config(("POSTGRES_PASSWORD", TestSecrets.NewPassword()), ("POSTGRES_HOST", "  "), ("POSTGRES_DB", ""), ("POSTGRES_PORT", ""))));
 
         Assert.Equal("localhost", parsed.Host);
         Assert.Equal("huntops", parsed.Database);
@@ -67,7 +75,8 @@ public sealed class DatabaseConnectionStringTests
     [Fact]
     public void Password_with_connection_string_metacharacters_round_trips()
     {
-        const string password = "p@ss;word=1 'quoted\"";
+        // Connection-string metacharacters (; = ' ") around a random core.
+        var password = $"a;b={TestSecrets.NewPassword()}'c\"";
 
         var parsed = new NpgsqlConnectionStringBuilder(DatabaseConnectionString.Resolve(Config(("POSTGRES_PASSWORD", password))));
 
@@ -91,7 +100,7 @@ public sealed class DatabaseConnectionStringTests
     public void Invalid_port_is_rejected(string port)
     {
         var ex = Assert.Throws<InvalidOperationException>(() =>
-            DatabaseConnectionString.Resolve(Config(("POSTGRES_PASSWORD", "pw"), ("POSTGRES_PORT", port))));
+            DatabaseConnectionString.Resolve(Config(("POSTGRES_PASSWORD", TestSecrets.NewPassword()), ("POSTGRES_PORT", port))));
 
         Assert.Contains("POSTGRES_PORT", ex.Message, StringComparison.Ordinal);
     }

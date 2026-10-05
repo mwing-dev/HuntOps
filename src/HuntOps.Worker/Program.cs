@@ -2,6 +2,7 @@ using HuntOps.Infrastructure;
 using HuntOps.Infrastructure.Health;
 using HuntOps.Infrastructure.Hosting;
 using HuntOps.Infrastructure.Logging;
+using HuntOps.Worker.Commands;
 using HuntOps.Worker.Heartbeat;
 using HuntOps.Worker.Migrations;
 
@@ -13,6 +14,11 @@ if (ContainerHealthProbe.IsRequested(args))
 if (MigrateCommand.IsRequested(args))
 {
     return await MigrateCommand.RunAsync(args);
+}
+
+if (ApiKeyCommand.IsRequested(args))
+{
+    return await ApiKeyCommand.RunAsync(args, Console.Out, Console.Error);
 }
 
 var builder = WebApplication.CreateSlimBuilder(args);
